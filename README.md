@@ -70,26 +70,6 @@ The final image is assembled:
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%202.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%202.png)
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%206.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%206.png)
 
-## 💻 Running Locally
-
-Since this project loads texture files, you cannot run it by simply opening the `index.html` file in your browser due to security policies (CORS). You must serve it from a local web server.
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-username/your-repo-name.git
-    ```
-2.  Navigate to the project directory:
-    ```bash
-    cd your-repo-name
-    ```
-3.  Start a simple local server. If you have Node.js installed, you can use `npx`:
-    ```bash
-    npx serve
-    ```
-    Alternatively, you can use a tool like the **Live Server** extension for Visual Studio Code.
-
-4.  Open your browser and navigate to the local address provided (e.g., `http://localhost:3000`).
-
 ## ™️ Credits
 
 This project was developed by **[leoawen](https://github.com/leoawen)** with the assistance of Google's AI for code structuring, documentation, and translation.
