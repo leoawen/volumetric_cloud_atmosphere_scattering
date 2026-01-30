@@ -4,10 +4,8 @@
 ![GLSL](https://img.shields.io/badge/GLSL-3.0-green.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 
-**[INCLUA AQUI UM GIF OU UMA IMAGEM IMPRESSIONANTE DO MOTOR EM AÇÃO]**
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2013.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2013.png)
-![https://github.com/leoawen/volumetric-clouds/blob/main/images/volumetric-clouds-screenshot-2.png](https://github.com/leoawen/volumetric-clouds/blob/main/images/volumetric-clouds-screenshot-2.png)
-![https://github.com/leoawen/volumetric-clouds/blob/main/images/volumetric-clouds-screenshot-3.png](https://github.com/leoawen/volumetric-clouds/blob/main/images/volumetric-clouds-screenshot-3.png)
+![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%204.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%204.png)
 
 A fully real-time, physically-based planetary atmosphere and volumetric cloud rendering engine built from the ground up using **Three.js** and **GLSL**. This project serves as an educational tool and a demonstration of advanced real-time graphics techniques in a web browser.
 
