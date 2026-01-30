@@ -102,8 +102,7 @@ This project was built using techniques and mathematical foundations inspired by
 
 ## 📜 License
 
-This project is open-source and available under the **MIT License**. See the [LICENSE](https://opensource.org/licenses/MIT) file for more info.# volumetric_cloud_atmosphere
-Vibecoded Universal Planetary Volumetric Cloud &amp; Atmosphere Engine whith HTML Three.js
+This project is open-source and available under the **MIT License**. See the [LICENSE](https://opensource.org/licenses/MIT) file for more info.
 
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2012.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2012.png)
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%208.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%208.png)
