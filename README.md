@@ -94,8 +94,11 @@ Since this project loads texture files, you cannot run it by simply opening the 
 
 This project was developed by **[leoawen](https://github.com/leoawen)** with the assistance of Google's AI for code structuring, documentation, and translation.
 
-Reference
-https://www.shadertoy.com/view/lcfSRl
+## 📚 References & Inspiration
+
+This project was built using techniques and mathematical foundations inspired by the amazing work of the graphics community. Special thanks to:
+
+*   **[Fast Atmosphere](https://www.shadertoy.com/view/lcfSRl)** by *Fewes in 2024-01-19* on Shadertoy - This was a primary reference for the atmosphere.
 
 ## 📜 License
 
