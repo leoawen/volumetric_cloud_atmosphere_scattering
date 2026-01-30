@@ -1680,7 +1680,7 @@
 
         // --- 4.3 Terrain (External Assets) ---
         const gltfLoader = new GLTFLoader();
-        gltfLoader.load("https://dl.dropboxusercontent.com/scl/fi/zwbmvhasz89use9j1ksc2/Plano-Padr-o-Prototipagem-com-Terreno350km.glb?rlkey=wu14liwxm5k1qyqwbfpn8lkps", (gltf) => {
+        gltfLoader.load("https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/assets/scenario_sample350km.glb", (gltf) => {
             const terrain = gltf.scene;
             terrain.position.set(0, 0, 0); 
             worldContainer.add(terrain);
@@ -1714,7 +1714,7 @@
 
         // Blue Noise Loading
         const textureLoader = new THREE.TextureLoader();
-        const blueNoiseTexture = textureLoader.load('https://dl.dropboxusercontent.com/scl/fi/trdf9pqmfct3zt5jckum7/BlueNoiseFraco.png?rlkey=k4b7zr8f1avqwyxz4szd4yuul');
+        const blueNoiseTexture = textureLoader.load('https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/assets/bluenoise.png');
         blueNoiseTexture.wrapS = THREE.RepeatWrapping; 
         blueNoiseTexture.wrapT = THREE.RepeatWrapping;
         blueNoiseTexture.minFilter = THREE.NearestFilter; 
