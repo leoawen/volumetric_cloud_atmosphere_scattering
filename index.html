@@ -1,0 +1,3097 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Title translated for international context -->
+    <title>Universal Planetary Volumetric Cloud & Atmosphere Engine</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+
+        #header-top {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            letter-spacing: 1px;
+            pointer-events: none; /* Ensures UI doesn't block mouse clicks on the canvas */
+            z-index: 10;
+        }
+
+        #header-top a {
+            color: #00ffcc;
+            text-decoration: none;
+            pointer-events: auto; /* Re-enables clicking specifically for the link */
+            font-weight: bold;
+            border-bottom: 1px solid transparent;
+            transition: border-bottom 0.3s ease;
+        }
+
+        #header-top a:hover {
+            border-bottom: 1px solid #00ffcc;
+        }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        #instructions {
+            position: absolute;
+            /* Aligned to bottom HUD */
+            bottom: 20px; 
+            left: 50%;
+            transform: translateX(-50%);           
+            color: white;
+            text-align: center;
+            font-size: 14px; 
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border: 1px solid #555;
+            border-radius: 8px;
+            cursor: pointer;
+            pointer-events: auto; /* Allows clicking to lock pointer */
+            max-width: 450px;
+            z-index: 5;
+        }
+        #instructions h1 { font-size: 18px; margin-top: 0; color: #ffffff; }
+        #instructions p { font-size: 13px; line-height: 1.5; }
+
+        #hud-container-bottom-left {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            align-items: flex-end;
+            gap: 15px;
+        }
+        #hud-bottom-left {
+            position: relative; 
+            color: #00ffcc; 
+            font-size: 16px;
+            text-shadow: 1px 1px 2px black; 
+            background: rgba(0, 0, 0, 0.5); 
+            padding: 15px; 
+            border-left: 3px solid #00ffcc;
+        }       
+        .hud-label { opacity: 0.7; font-size: 12px; color: #aaa; }
+        .hud-value { font-weight: bold; font-size: 18px; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="header-top">
+            Three.js HTML Atmospheric Engine - Vibecoded by 
+            <a href="https://github.com/leoawen" target="_blank">"leoawen"</a>
+        </div>
+
+        <div id="instructions">
+            <h1>ENVIRONMENT READY</h1>
+            <p style="color: #00ffcc;">Click to Start Flight</p>
+            <p><strong>W, A, S, D</strong> - Move | <strong>SPACE</strong> - Up | <strong>SHIFT</strong> - Down</p>
+            <p><strong>Mouse</strong> - Look (ESC to pause)</p>
+        </div>
+
+        <div id="hud-container-bottom-left">
+            <div id="hud-bottom-left">
+                <div><span class="hud-label">ALTITUDE (Y)</span><br><span id="altimeter" class="hud-value">0 m</span></div>
+                <div style="margin-top: 10px;"><span class="hud-label">SPEED</span><br><span id="speedometer" class="hud-value">0 m/s</span></div>
+                <div style="margin-top: 10px;"><span class="hud-label">POSITION (X, Z)</span><br><span id="coords" class="hud-value">0, 0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Importmap THREE.JS r165 -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/",
+                "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import GUI from 'lil-gui';
+        import Stats from 'three/addons/libs/stats.module.js';
+
+        // =========================================================================================
+        // 1. WORLD CONFIGURATION (SINGLE SOURCE OF TRUTH)
+        // =========================================================================================
+        // All initial "Softcode" configurations must be declared here.
+        
+        const WORLD_CONFIG = {
+            flight: {
+                speed: 1000,
+                maxSpeed: 1000000
+            },
+            
+            // Physical Dimensions of the Cloud Layer
+            dimensions: {
+                height: 20000,  // Atmosphere thickness
+                baseY: 3000     // Cloud altitude (Above Planet Radius)
+            },
+
+            generation: {
+                resolution: 256, // Base 3D Texture Resolution (Low Freq Bake Quality)
+                
+                // --- BASE LAYER 1 (STRUCTURAL BASE) ---
+                layer1: {
+                    repeat: 2,      // Number of repetitions in the cube (Integer = Seamless)
+                    scale: 1.0,     // Noise scale within the repetition
+                    seed: 0.0       // Random variation
+                },
+
+                // --- BASE LAYER 2 (VARIATION) ---
+                layer2: {
+                    repeat: 8,      // Different repetition to create complexity
+                    scale: 1.0,     // Different scale for details
+                    seed: 0.1       // Different seed to avoid overlap
+                },
+
+                // --- Detail Texture Configuration (Worley/Popcorn) ---
+                detail: {
+                    resolution: 32, // 32x32x32 is sufficient for repetitive detail (optimization)
+                    scaleR: 2.0,    // Low Frequency (Large bubbles)
+                    scaleG: 4.0,    // Medium Frequency
+                    scaleB: 8.0,    // High Frequency (Fine crunchiness)
+                    seed: 0.2       // Random variation
+                },
+
+                mixStrength: 0.3,   // Blend strength (0.0 = Layer 1 only, 1.0 = Strong Layer 2)
+
+                // --- GENERAL FILTERS ---
+                coverage: 1.0,
+                erosion: 0.3,
+                contrast: 1.8,
+                
+                // --- VERTICAL PROFILE ---
+                fadeCoverageBottom: 0.0,
+                fadeCoverageStart: 0.06,
+                fadeCoverageEnd: 1.0,
+                shapeBase: 0.2,
+                shapeBaseCurve: 0.1, // Controls funnel shape (1.0 = linear, > 1.0 = pointy)
+                shapeTop: 1.0,
+                opacityBase: 0.12, // Base Fade
+                opacityTop: 0.9,   // Top Fade
+            },
+
+            // --- WEATHER MAP CONFIGURATION ----------
+            weather: {
+                // General Map Settings
+                enable: true,          // Enable/Disable weather influence
+                resolution: 64,        // Resolution (128 is enough for macro)
+                repeat: 19.0,          // How many times weather repeats around the planet
+                poleTilt: 60.0,        // Axis rotation in degrees (0 to 90)
+                poleMask: 0.1,         // Size of the cleared area at the pole (0.0 to 1.0)
+
+                // --- DYNAMIC HEIGHT PARAMETERS ---
+                heightMax: 30000.0, // Max height clouds reach where weather is white
+                heightCurve: 0.01,  // Curve: 1.0 linear, > 1.0 peaks taper, < 1.0 spreads height
+                
+                // Channel R Config (Red) -> COVERAGE
+                channelR: {
+                    seed: 0.3,
+                    scale: 11.0,         
+                    persistence: 0.0,   
+                    offset: 0.0         
+                },
+
+                // Channel G Config (Green) -> CLOUD TYPE/HEIGHT
+                channelG: {
+                    enable: false,
+                    seed: 0.0,
+                    scale: 2.0,         
+                    persistence: 0.5,
+                    offset: 10.0        
+                }
+            },
+            // ---------------------------------------------------------
+
+            rendering: { // VOLUMETRIC RENDERING
+                densityScale: 1.0,                     
+                shadowOffset: 500.0,  // Shadow check distance offset        
+                threshold: 0.0,       // "Noise Floor" threshold
+                cloudScale: 1.1,
+                globalScaleFactor: 0.00001,
+
+                // --- BASE LOD CONFIGURATION (TEXTURE LOD - MIPMAPPING) ---
+                baseLodMinDist: 0.0,        // Max resolution up to here
+                baseLodMaxDist: 1000000.0,  // Min resolution from here
+                baseLodMaxLevel: 4.0,       // Mipmap Level (0 = Full, 1 = Half ... 4 = 1/16)
+
+                // Key Parameter: Controls edge gradient width
+                // 0.0 = Hard Edge (Blocky), 1.0 = Very diffuse smoke
+                edgeSoftness: 0.2, 
+
+                detailScale: 10.0,      // Detail texture tiling repetition
+                erosionStrength: 0.3,   // Edge erosion strength (0.0 = smooth, 1.0 = eroded)
+                lodDistance: 1000000.0, // Distance where detail starts fading (Optimization)                
+                popcornMode: true,      // Toggles between "Dig Holes" (False) and "Round Popcorn" (True)
+
+                // --- RAYMARCHING OPTIMIZATION PARAMETERS ---
+                steps: 64,              // Sample limit for "hits" (Visual quality inside cloud)
+                maxIterations: 800,     // Hard loop limit (GPU Safety)
+                initialStep: 500.0,     // First step size in meters (Close resolution)
+                stepGrowth: 1.001,      // Geometric growth factor (1.5% larger each step)
+                spaceSkipRatio: 1.0,    // Skip multiplier when no cloud found (Empty space acceleration)
+                maxDistance: 1000000.0, // Max rendering distance (Far clip)
+
+                // --- VISUAL PARAMETERS ---
+                absorp: 20.0,            // Beer's Law - (uLightAbsorption) Increased for deeper shadows
+                skylightAbsorption: 0.0, // Softer absorption for skylight (blue shadows)
+                
+                powderScale: 1.0,       // "Sugar/Powder" effect scale on edges
+                powderIntensity: 1.0,   // Edge brightness strength
+                
+                phaseIntensity: 3.0,    // Brightness multiplier when looking at sun
+                phaseG: 0.6,            // Anisotropy (Light focus towards sun direction)
+
+                opacityClamp: 0.99,     // Solidity Cutoff: if passed, becomes solid (blocks sun)
+
+                taa: {
+                    resolution: 0.6,      // Cloud resolution scale factor (0.5 = half res)
+                    blend: 0.3,           // Blend with previous frame (0.0 = no history, 0.9 = heavy trail)
+                    ghosting: 0.8,        // Ghost suppression (sensitivity to change)
+                    distanceCutoff: 100.0 // Distance where noise method switches (Static vs Sliding)
+                },
+            },
+
+            // --- ANIMATION CONFIGURATION ---
+            animation: {
+                // 3D Texture Movement
+                wind3D: {
+                    speedX: 0.002,  // X axis speed
+                    speedY: -0.002, // Y axis speed (vertical flow)
+                    speedZ: 0.001,  // Z axis speed
+                    active: true
+                },
+                // Weather system rotation around planet
+                weatherRotation: {
+                    speedU: -0.0001, // Longitudinal Rotation
+                    speedV: 0.0,     // Latitudinal Rotation
+                    active: true
+                }
+            },
+
+            environment: {
+                sunElevation: 20.0,     // Sun Elevation in degrees (-90 to 90)
+                sunAzimuth: 215.0,      // Sun Rotation on horizon (0 to 360)
+                sunIntensity: 20.0,     // Sun intrinsic brightness
+                exposure: 0.6,          // Final camera exposure (tone mapping)
+            },
+
+            // --- GOD RAYS ---
+            godRays: {
+                intensity: 3.0,    // Final composition intensity
+                density: 1.0,      // Length / Spread
+                decay: 1.0,        // Light decay
+                weight: 0.1,       // Base brightness
+                exposure: 0.1,     // Blur exposure
+                cloudThreshold: 0.9 // Cloud transparency hardness in rays (0.1 = hard, 1.0 = soft)
+            },
+
+            // Planet Visual Configuration (Ocean)
+            planet: {
+                color: 0x001e36,    // Base ocean color (Deep Blue)
+                roughness: 0.5,     // Roughness (Water shininess)
+                metalness: 0.1      // Metalness (Reflection)
+            },
+
+            physical: {
+                planetRadius: 6371000.0,        // Physical planet radius in meters
+                atmosphereThickness: 100000.0,  // Air layer thickness in meters
+                
+                // Scattering coefficients (Physically based Rayleigh/Mie)
+                rayleighCoeff: new THREE.Vector3(5.802e-6, 13.558e-6, 33.100e-6),
+                mieCoeff: new THREE.Vector3(3.996e-6, 3.996e-6, 3.996e-6),
+                ozoneCoeff: new THREE.Vector3(0.650e-6, 1.881e-6, 0.085e-6),
+                
+                // Intensity controls for artistic adjustments
+                rayleighScale: 1.0,
+                mieScale: 1.0,
+                ozoneScale: 1.0,
+                
+                // Height where particle density halves
+                rayleighScaleHeight: 8000.0, 
+                mieScaleHeight: 1200.0
+            },
+
+            debug: {
+                showAtmosphere: false,     // Atmosphere wireframe
+                showPlanet: true           // Planet mesh
+            },
+        };
+
+
+        // =========================================================================================
+        // 2. SHADERS 
+        // =========================================================================================
+        
+        // =========================================================================================
+        // CloudGeneratorShader - Perlin + Worley Mix
+        // =========================================================================================
+        const CloudGeneratorShader = {
+            vertexShader: /* glsl */ `
+                #include <common>
+                #include <logdepthbuf_pars_vertex>
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    #include <logdepthbuf_vertex>
+                }
+            `,
+            fragmentShader: /* glsl */ `
+                precision highp float;
+                #include <common>
+                #include <logdepthbuf_pars_fragment>
+
+                varying vec2 vUv;
+                
+                uniform float uSliceZ; // Current Bake Slice (0 to 1)
+                
+                // --- LAYER 1 PARAMETERS (PERLIN - GENERAL SHAPE) ---
+                uniform float uRepeat1; 
+                uniform float uScale1;  
+                uniform float uSeed1;
+                
+                // --- LAYER 2 PARAMETERS (WORLEY - "POPCORN" STRUCTURE) ---
+                uniform float uRepeat2;
+                uniform float uScale2;
+                uniform float uSeed2;
+
+                uniform float uMixStrength; // Strength of "popcorn" over base
+                
+                uniform float uContrast;   
+                uniform float uErosion;    
+
+                // --- Noise Functions ---
+
+                // Random Hash 3D
+                vec3 hash33(vec3 p) {
+                    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+                            dot(p,vec3(269.5,183.3,246.1)),
+                            dot(p,vec3(113.5,271.9,124.6)));
+                    return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+                }
+
+                // Hash for Worley (0..1)
+                vec3 hash33_worley(vec3 p) {
+                    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+                              dot(p,vec3(269.5,183.3,246.1)),
+                              dot(p,vec3(113.5,271.9,124.6)));
+                    return fract(sin(p)*43758.5453123);
+                }
+
+                // Periodic Perlin Noise (Smooth, smoke-like)
+                float periodicNoise(vec3 p, float period) {
+                    vec3 pi = floor(p);
+                    vec3 pf = fract(p);
+                    vec3 w = pf * pf * (3.0 - 2.0 * pf);
+                    
+                    vec3 p0 = mod(pi, period);
+                    vec3 p1 = mod(pi + vec3(1.0), period);
+                    
+                    float n000 = dot(hash33(vec3(p0.x, p0.y, p0.z)), pf - vec3(0.0, 0.0, 0.0));
+                    float n100 = dot(hash33(vec3(p1.x, p0.y, p0.z)), pf - vec3(1.0, 0.0, 0.0));
+                    float n010 = dot(hash33(vec3(p0.x, p1.y, p0.z)), pf - vec3(0.0, 1.0, 0.0));
+                    float n110 = dot(hash33(vec3(p1.x, p1.y, p0.z)), pf - vec3(1.0, 1.0, 0.0));
+                    float n001 = dot(hash33(vec3(p0.x, p0.y, p1.z)), pf - vec3(0.0, 0.0, 1.0));
+                    float n101 = dot(hash33(vec3(p1.x, p0.y, p1.z)), pf - vec3(1.0, 0.0, 1.0));
+                    float n011 = dot(hash33(vec3(p0.x, p1.y, p1.z)), pf - vec3(0.0, 1.0, 1.0));
+                    float n111 = dot(hash33(vec3(p1.x, p1.y, p1.z)), pf - vec3(1.0, 1.0, 1.0));
+                    
+                    return mix(mix(mix(n000, n100, w.x), mix(n010, n110, w.x), w.y),
+                            mix(mix(n001, n101, w.x), mix(n011, n111, w.x), w.y), w.z);
+                }
+
+                // FBM Perlin (Accumulates octaves)
+                float fbmPerlin(vec3 p, float repeat, float scale) {
+                    float f = 0.0;
+                    float amp = 0.5;
+                    float currentPeriod = repeat * scale;
+                    vec3 currentPos = p * scale;
+                    
+                    for(int i = 0; i < 4; i++) { 
+                        f += amp * periodicNoise(currentPos, currentPeriod);
+                        currentPos *= 2.0; 
+                        currentPeriod *= 2.0; 
+                        amp *= 0.5;
+                    }
+                    return f + 0.5; // Normalize 0..1
+                }
+
+                // Periodic Worley Noise (Cellular/Bubbles)
+                // Returns 1.0 at cell center, 0.0 at edge
+                float worleyNoise(vec3 p, float period) {
+                    vec3 id = floor(p);
+                    vec3 f = fract(p);
+                    float minDist = 1.0;
+                    
+                    for(int x = -1; x <= 1; x++) {
+                        for(int y = -1; y <= 1; y++) {
+                            for(int z = -1; z <= 1; z++) {
+                                vec3 neighbor = vec3(float(x), float(y), float(z));
+                                vec3 tileId = mod(id + neighbor, period); // Perfect Tiling
+                                vec3 point = hash33_worley(tileId + vec3(uSeed2 * 10.0)); // Layer 2 Seed
+                                
+                                vec3 diff = neighbor + point - f;
+                                float dist = length(diff);
+                                minDist = min(minDist, dist);
+                            }
+                        }
+                    }
+                    // Invert to get "Bubbles" (Billowy)
+                    return 1.0 - clamp(minDist, 0.0, 1.0);
+                }
+
+                // FBM Worley (Accumulates bubbles of different sizes)
+                float fbmWorley(vec3 p, float repeat, float scale) {
+                    float f = 0.0;
+                    float amp = 0.5; // Weight of larger bubble
+                    float currentPeriod = repeat * scale;
+                    vec3 currentPos = p * scale;
+                    
+                    // 3 Octaves of Worley are enough for structure
+                    for(int i = 0; i < 3; i++) {
+                        f += amp * worleyNoise(currentPos, currentPeriod);
+                        currentPos *= 2.0; 
+                        currentPeriod *= 2.0;
+                        amp *= 0.5;
+                    }
+                    // Worley accumulates high values, normalize slightly
+                    return f * 0.8; 
+                }
+
+                // Remap Function (Essential for mixing Perlin and Worley)
+                // Remaps value 'v' from range 'minOld-maxOld' to 'minNew-maxNew'
+                float remap(float v, float minOld, float maxOld, float minNew, float maxNew) {
+                    return minNew + (v - minOld) * (maxNew - minNew) / (maxOld - minOld);
+                }
+
+                void main() {
+                    #include <logdepthbuf_fragment>
+
+                    vec2 uv = vUv;
+                    
+                    // --- GENERATION LAYER 1 (BASE PERLIN) ---
+                    // Defines general "smoke" shape
+                    vec3 pos1 = vec3(uv.x, uSliceZ, uv.y) * uRepeat1;
+                    float baseCloud = fbmPerlin(pos1 + vec3(uSeed1*10.0), uRepeat1, uScale1);
+                    
+                    // --- GENERATION LAYER 2 (WORLEY STRUCTURE) ---
+                    // Defines "blobs" inside cloud
+                    vec3 pos2 = vec3(uv.x, uSliceZ, uv.y) * uRepeat2;
+                    float structure = fbmWorley(pos2, uRepeat2, uScale2);
+                    
+                    // --- MIX ---
+                    // Base defines WHERE cloud is. Worley sculpts the shape.
+                    // If uMixStrength is high, clouds are very "bubbly".
+                    // If low, they are smoother.
+                    
+                    float finalNoise = mix(baseCloud, structure, uMixStrength);
+                    
+                    // --- EROSION AND CONTRAST ---
+                    float f = mix(finalNoise, finalNoise * finalNoise, uErosion);
+                    
+                    // Apply Contrast (Sponge)
+                    float cloudDensity = (uContrast * (f - 0.5)) + 0.5;
+                    
+                    float visible = clamp(cloudDensity, 0.0, 1.0); 
+                    gl_FragColor = vec4(visible, visible, visible, 1.0);
+                }
+            `
+        };
+
+        // =========================================================================================
+        //  DetailGeneratorShader - Generates Worley Noise (Cells) for Detail Erosion (Popcorn)
+        // =========================================================================================
+        // This shader creates a texture where:
+        // Channel R: Large Cells (Low Freq)
+        // Channel G: Medium Cells
+        // Channel B: Small Cells (High Freq)
+        // =========================================================================================
+        const DetailGeneratorShader = {
+            vertexShader: /* glsl */ `
+                #include <common>
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: /* glsl */ `
+                precision highp float;
+                varying vec2 vUv;
+
+                // Current slice of 3D volume (0.0 to 1.0)
+                uniform float uSliceZ;
+                
+                // Repetition settings for each channel (LOD)
+                uniform float uScaleR; // Base scale (e.g., 4.0)
+                uniform float uScaleG; // Medium scale (e.g., 8.0)
+                uniform float uScaleB; // Fine scale (e.g., 16.0)
+                
+                uniform float uSeed;
+
+                // --- Hash Function for Randomness (vec3 -> vec3) ---
+                vec3 hash33(vec3 p) {
+                    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+                              dot(p,vec3(269.5,183.3,246.1)),
+                              dot(p,vec3(113.5,271.9,124.6)));
+                    return fract(sin(p)*43758.5453123);
+                }
+
+                // --- Periodic Worley Noise (Tileable) ---
+                // Calculates distance to nearest random point in grid
+                // Returns: 1.0 - distance (to create convex spheres/popcorn)
+                float worleyNoise(vec3 uv, float freq) {
+                    vec3 id = floor(uv);
+                    vec3 f = fract(uv);
+                    
+                    float minDist = 1.0;
+                    
+                    // Search neighbors (3x3x3)
+                    for(int x = -1; x <= 1; x++) {
+                        for(int y = -1; y <= 1; y++) {
+                            for(int z = -1; z <= 1; z++) {
+                                vec3 neighbor = vec3(float(x), float(y), float(z));
+                                
+                                // Tiling secret (Seamless repetition):
+                                // Use 'mod' to connect right edge to left edge
+                                vec3 tileId = mod(id + neighbor, freq);
+                                
+                                vec3 point = hash33(tileId + vec3(uSeed)); // Random point in cell
+                                
+                                // Optional animation (zero if static bake desired)
+                                // point = 0.5 + 0.5 * sin(uSeed + 6.2831 * point); 
+                                
+                                vec3 diff = neighbor + point - f;
+                                float dist = length(diff);
+                                
+                                minDist = min(minDist, dist);
+                            }
+                        }
+                    }
+                    
+                    // Invert (1.0 - dist) to have white centers (convex)
+                    // Crucial for "Popcorn/Billowy" effect
+                    return 1.0 - clamp(minDist, 0.0, 1.0);
+                }
+
+                // Simplified FBM for Worley (direct sampling per channel for control)
+                
+                void main() {
+                    // 3D Coordinate based on UV and Z Slice
+                    vec3 pos = vec3(vUv.x, uSliceZ, vUv.y);
+                    
+                    // --- CHANNEL R (Coarse Detail) ---
+                    // Multiply pos by scale to define frequency
+                    float r = worleyNoise(pos * uScaleR, uScaleR);
+                    
+                    // --- CHANNEL G (Medium Detail) ---
+                    float g = worleyNoise(pos * uScaleG, uScaleG);
+                    
+                    // --- CHANNEL B (Fine Detail) ---
+                    float b = worleyNoise(pos * uScaleB, uScaleB);
+                    
+                    // Write 3 detail levels to RGB channels
+                    gl_FragColor = vec4(r, g, b, 1.0);
+                }
+            `
+        };
+
+        // =========================================================================================
+        // WeatherGeneratorShader - Generates 2D Weather Map (R: Coverage, G: Type)
+        // =========================================================================================
+        const WeatherGeneratorShader = {
+            vertexShader: /* glsl */ `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: /* glsl */ `
+                precision highp float;
+                varying vec2 vUv;
+
+                // Channel R Uniforms (Coverage)
+                uniform float uScaleR;
+                uniform float uSeedR;
+                uniform float uPersistR;
+                uniform vec2 uOffsetR;
+
+                // Channel G Uniforms (Type)
+                uniform float uScaleG;
+                uniform float uSeedG;
+                uniform float uPersistG;
+                uniform vec2 uOffsetG;
+
+                // --- Noise Functions ---
+                vec3 hash33(vec3 p) {
+                    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+                              dot(p,vec3(269.5,183.3,246.1)),
+                              dot(p,vec3(113.5,271.9,124.6)));
+                    return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+                }
+
+                float periodicNoise(vec3 p, float period) {
+                    vec3 pi = floor(p);
+                    vec3 pf = fract(p);
+                    vec3 w = pf * pf * (3.0 - 2.0 * pf);
+                    
+                    // Modulo ensures tiling (seamless repetition)
+                    vec3 p0 = mod(pi, period);
+                    vec3 p1 = mod(pi + vec3(1.0), period);
+                    
+                    float n000 = dot(hash33(vec3(p0.x, p0.y, p0.z)), pf - vec3(0.0, 0.0, 0.0));
+                    float n100 = dot(hash33(vec3(p1.x, p0.y, p0.z)), pf - vec3(1.0, 0.0, 0.0));
+                    float n010 = dot(hash33(vec3(p0.x, p1.y, p0.z)), pf - vec3(0.0, 1.0, 0.0));
+                    float n110 = dot(hash33(vec3(p1.x, p1.y, p0.z)), pf - vec3(1.0, 1.0, 0.0));
+                    
+                    float n001 = dot(hash33(vec3(p0.x, p0.y, p1.z)), pf - vec3(0.0, 0.0, 1.0));
+                    float n101 = dot(hash33(vec3(p1.x, p0.y, p1.z)), pf - vec3(1.0, 0.0, 1.0));
+                    float n011 = dot(hash33(vec3(p0.x, p1.y, p1.z)), pf - vec3(0.0, 1.0, 1.0));
+                    float n111 = dot(hash33(vec3(p1.x, p1.y, p1.z)), pf - vec3(1.0, 1.0, 1.0));
+                    
+                    return mix(mix(mix(n000, n100, w.x), mix(n010, n110, w.x), w.y),
+                               mix(mix(n001, n101, w.x), mix(n011, n111, w.x), w.y), w.z);
+                }
+
+                // Custom 2D FBM (using Z as seed offset)
+                float fbm(vec2 uv, float scale, float seed, float persistence, vec2 offset) {
+                    float f = 0.0;
+                    float amp = 0.5;
+                    float currentScale = scale;
+                    vec3 pos = vec3(uv, seed); // Use Z as "Temporal Seed"
+                    
+                    // Accumulate noise (Octaves)
+                    for(int i = 0; i < 4; i++) {
+                        // Offset animates noise if needed
+                        vec3 samplePos = (pos + vec3(offset, 0.0)) * currentScale;
+                        
+                        // Call 3D periodic noise, varying only X and Y
+                        f += amp * periodicNoise(samplePos, currentScale);
+                        
+                        samplePos *= 2.0;
+                        currentScale *= 2.0;
+                        amp *= persistence; // Controls roughness
+                    }
+                    // Normalize -1..1 to 0..1
+                    return f + 0.5;
+                }
+
+                void main() {
+                    vec2 uv = vUv;
+                    
+                    // --- CHANNEL R (COVERAGE) ---
+                    float cov = fbm(uv, uScaleR, uSeedR, uPersistR, uOffsetR);
+                    // Increase contrast to better define areas
+                    cov = smoothstep(0.2, 0.8, cov); 
+
+                    // --- CHANNEL G (TYPE/HEIGHT) ---
+                    float type = fbm(uv, uScaleG, uSeedG, uPersistG, uOffsetG);
+                    
+                    gl_FragColor = vec4(cov, type, 0.0, 1.0);
+                }
+            `
+        };
+
+        // =========================================================================================
+        // CloudVolumeShader - PHYSICALLY BASED GLSL 3.0 WITH MULTIPLE OUTPUTS (WORLEY DETAIL EROSION)
+        // =========================================================================================
+        const CloudVolumeShader = {
+            vertexShader: /* glsl */ `
+                out vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: /* glsl */ `
+                precision highp float;
+                precision highp sampler3D;
+
+                layout(location = 0) out vec4 pc_FragColor; 
+                layout(location = 1) out vec4 pc_FragDepth; 
+
+                varying vec2 vUv;
+
+                // --- GENERAL UNIFORMS ---
+                uniform mat4 uInverseViewMatrix;
+                uniform mat4 uInverseProjectionMatrix;
+                uniform vec3 uCameraPos;
+                uniform sampler2D tDepth; 
+                uniform float uLogDepthBufFC;
+                
+                // --- TEXTURES ---
+                uniform sampler2D tBlueNoise;   
+                uniform vec2 uBlueNoiseOffset;             
+                uniform sampler3D uTexture;       
+                uniform sampler3D uDetailTexture; 
+                uniform sampler2D tWeatherMap;
+                uniform vec3 uWindOffset;
+                
+                // --- ENVIRONMENT ---
+                uniform vec3 uSunDirection;     
+                uniform float uSunIntensity;    
+                uniform vec3 uPlanetCenter; 
+                uniform float uPlanetRadius;
+                uniform float uAtmosphereRadius;
+                uniform vec3 uRayleighCoeff;
+                uniform vec3 uMieCoeff;
+                uniform float uRayleighScaleHeight;
+                
+                // --- CLOUD CONTROLS ---
+                uniform float uCloudBaseOffset;
+                uniform float uCloudHeight;
+                uniform float uDensityScale;
+                uniform float uAbsorp;
+                uniform float uThreshold;
+
+                // Uniform for Shadow Offset
+                uniform float uShadowOffset;
+                
+                // Edge Softness Envelope
+                uniform float uEdgeSoftness; 
+
+                uniform float uCloudScale;         
+                uniform float uGlobalScaleFactor;
+                
+                // EROSION
+                uniform float uDetailScale;        
+                uniform float uErosionStrength;    
+                uniform float uLodDistance;        
+                uniform bool uPopcornMode;
+
+                // --- BASE LOD SYSTEM UNIFORMS ---
+                uniform float uBaseLodMinDist;
+                uniform float uBaseLodMaxDist;
+                uniform float uBaseLodMaxLevel;
+
+                // VISUALS
+                uniform float uSkylightAbsorption;
+                uniform float uPowderScale;
+                uniform float uPowderIntensity;
+                uniform float uPhaseIntensity;
+                uniform float uPhaseG;
+                uniform float uOpacityClamp;
+                
+                uniform float uCoverage;
+                uniform float uCovBottomShape;
+                uniform float uCovBottomCurve;
+                uniform float uCovTopShape;
+                uniform float uCloudBottom;
+                uniform float uCloudTop;
+                uniform float uFadeCovBottom;
+                uniform float uFadeCovStart;
+                uniform float uFadeCovEnd;
+                
+                uniform bool uWeatherEnabled;
+                uniform vec2 uWeatherOffset;
+                uniform float uWeatherRepeat;
+                uniform float uWeatherPoleTilt;
+                uniform float uWeatherPoleMask;
+                uniform bool uWeatherGEnabled;
+                uniform float uWeatherHeightMax;
+                uniform float uWeatherHeightCurve;
+
+                // OPTIMIZATION
+                uniform float uSteps;           
+                uniform float uMaxIterations;   
+                uniform float uInitialStep;     
+                uniform float uStepGrowth;      
+                uniform float uSpaceSkipRatio;  
+                uniform float uMaxDistance;     
+                
+                uniform sampler2D tPreviousCloud;
+                uniform mat4 uPreviousViewProjectionMatrix;
+                uniform float uBlendFactor;
+                uniform float uGhostingSuppression;
+                uniform float uGhostingDistanceCutoff;
+                uniform float uFrame;
+
+                // --- HELPER FUNCTIONS ---
+                
+                float remap(float v, float minOld, float maxOld, float minNew, float maxNew) {
+                    return minNew + (v - minOld) * (maxNew - minNew) / (maxOld - minOld);
+                }
+
+                vec3 rotateX(vec3 v, float angle) {
+                    float s = sin(angle); float c = cos(angle);
+                    return vec3(v.x, v.y * c - v.z * s, v.y * s + v.z * c);
+                }
+
+                float getLinearDepth(float fragCoordZ) {
+                    float viewZ = -1.0 * (exp2(fragCoordZ / (uLogDepthBufFC * 0.5)) - 1.0);
+                    return viewZ;
+                }
+
+                // Ray-Sphere Intersection
+                vec2 hitSphere(vec3 orig, vec3 dir, vec3 center, float radius) {
+                    vec3 oc = orig - center;
+                    float b = dot(oc, dir);
+                    float c = dot(oc, oc) - radius * radius;
+                    float h = b * b - c;
+                    if (h < 0.0) return vec2(-1.0);
+                    h = sqrt(h);
+                    return vec2(-b - h, -b + h);
+                }
+
+                // Henyey-Greenstein Phase Function
+                float hg(float g, float cosTheta) {
+                    float g2 = g * g;
+                    return (1.0 - g2) / (4.0 * 3.14159 * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
+                }
+
+                // Dual Phase Function (Forward + Backward scattering)
+                float phaseFunction(float cosTheta) {
+                    return mix(hg(uPhaseG, cosTheta), hg(-0.2, cosTheta), 0.5);
+                }
+
+                // Calculates Sunlight Color reaching a point inside the atmosphere
+                vec3 getSunColorAtPoint(vec3 pointPos, vec3 sunDir) {
+                    vec2 planetHit = hitSphere(pointPos, sunDir, uPlanetCenter, uPlanetRadius * 0.995);
+                    if (planetHit.x > 0.0) return vec3(0.0); // Blocked by planet
+
+                    float altitude = length(pointPos - uPlanetCenter) - uPlanetRadius;
+                    vec3 up = normalize(pointPos - uPlanetCenter);
+                    float rawCos = dot(up, sunDir);
+                    float cosTheta = clamp(rawCos, -1.0, 1.0);
+                    if (cosTheta < -0.1) return vec3(0.0); 
+
+                    // Air Mass approximation
+                    float airMass = 1.0 / (max(cosTheta, 0.05) + 0.15 * pow(93.885 - acos(max(cosTheta, 0.0)) * 57.29, -1.253));
+                    float density = exp(-altitude / uRayleighScaleHeight);
+                    vec3 scattering = (uRayleighCoeff * 1.5 + uMieCoeff * 0.5) * airMass * density;
+                    vec3 transmittance = exp(-scattering * 15000.0); 
+
+                    return transmittance * uSunIntensity;
+                }
+
+                // --- [CRITICAL] CLOUD SAMPLING FUNCTION WITH SOFT EDGE ---
+                // Returns density (0.0 to 1.0)
+                float sampleCloud(vec3 p) {
+                    float distToCenter = length(p - uPlanetCenter);
+                    float altitude = distToCenter - uPlanetRadius;
+                    
+                    if(altitude < uCloudBaseOffset || altitude > (uCloudBaseOffset + uCloudHeight)) return 0.0;
+
+                    // 1. WEATHER DATA
+                    vec4 weatherData = vec4(1.0, 0.0, 0.0, 0.0); 
+                    float polarMask = 1.0; 
+
+                    if (uWeatherEnabled) {
+                        vec3 dir = (p - uPlanetCenter) / distToCenter;
+                        vec3 dirRotated = rotateX(dir, uWeatherPoleTilt);
+                        float u = (atan(dirRotated.z, dirRotated.x) / (2.0 * 3.14159)) + 0.5;
+                        float v = (asin(dirRotated.y) / 3.14159) + 0.5;
+                        vec2 uv = vec2(u, v);
+                        vec2 finalUV = (uv * uWeatherRepeat) + uWeatherOffset;
+                        weatherData = texture2D(tWeatherMap, finalUV);
+                        float poleProximity = abs(dirRotated.y);
+                        polarMask = 1.0 - smoothstep(1.0 - uWeatherPoleMask, 1.0, poleProximity);
+                    }
+
+                    float mapCoverage = smoothstep(0.2, 0.8, weatherData.r) * polarMask;
+                    if (mapCoverage <= 0.01) return 0.0;
+
+                    // Dynamic Height Calculation
+                    float heightModulator = pow(mapCoverage, uWeatherHeightCurve);
+                    float localCloudHeight = uWeatherHeightMax * heightModulator;
+                    float heightPercent = (altitude - uCloudBaseOffset) / localCloudHeight;
+                    if(heightPercent > 1.0) return 0.0;
+
+                    // 2. BASE SHAPE
+                    vec3 noiseCoord = ((p - uPlanetCenter) * (uGlobalScaleFactor * uCloudScale)) + uWindOffset;
+                    
+                    // --- [MANUAL LOD IMPLEMENTATION START] ---
+                    // 1. Calculate real distance from point (p) to camera
+                    float distToCam = distance(p, uCameraPos);
+
+                    // 2. Calculate interpolation factor (0.0 = close, 1.0 = far)
+                    // If distToCam < Min, lodFactor is 0. If > Max, it is 1.
+                    float lodFactor = clamp((distToCam - uBaseLodMinDist) / (uBaseLodMaxDist - uBaseLodMinDist), 0.0, 1.0);
+
+                    // 3. Define target Mipmap level
+                    // Level 0 = Original Res (256), Level 4 = Low Res (16)
+                    float targetLod = mix(0.0, uBaseLodMaxLevel, lodFactor);
+
+                    // 4. Sample texture forcing specific LOD
+                    // NOTE: textureLod only works if texture has mipmaps generated
+                    float baseDensity = textureLod(uTexture, noiseCoord, targetLod).r;
+                    // --- [MANUAL LOD IMPLEMENTATION END] ---
+
+                    // 3. VERTICAL SHAPING AND COVERAGE
+                    float mapType = weatherData.g; 
+                    float localShapeBase = uCovBottomShape;
+                    float localShapeTop = uCovTopShape;
+
+                    if (uWeatherGEnabled) {
+                        localShapeTop = mix(uCovTopShape, min(1.0, uCovTopShape + (mapType * 0.8)), mapType);
+                        localShapeBase = mix(uCovBottomShape, uCovBottomShape + (mapType * 0.1), mapType); 
+                    }
+
+                    float shapeBottom = pow(smoothstep(0.0, localShapeBase, heightPercent), uCovBottomCurve);
+                    float shapeTop = 1.0 - smoothstep(localShapeTop, 1.0, heightPercent);
+
+                    // --- NEW DUAL FADE LOGIC (BASE AND TOP) ---
+                    // 1. Fade In (Base): Increase coverage from 0 to 1
+                    float fadeIn = smoothstep(0.0, uFadeCovBottom, heightPercent);                  
+                    // 2. Fade Out (Top): Decrease coverage from 1 to 0
+                    float fadeOut = 1.0 - smoothstep(uFadeCovStart, uFadeCovEnd, heightPercent);                   
+                    // Combine: Cloud only exists where BOTH allow
+                    float verticalFadeCov = fadeIn * fadeOut;
+                    
+                    float dynamicCoverage = (mapCoverage * uCoverage) * verticalFadeCov * shapeBottom * shapeTop;
+                    
+                    // --- SMART REMAP ---
+                    // Instead of hard cutting, we remap the noise so coverage edge is 0.
+                    float density = remap(baseDensity, 1.0 - dynamicCoverage, 1.0, 0.0, 1.0);
+                    
+                    // Optimization: If negative (outside cloud), exit early.
+                    if (density <= 0.0) return 0.0;
+
+                    // 4. DETAIL EROSION
+                    // Apply erosion BEFORE final edge smoothing
+                    if (density > 0.0) {
+                        vec3 detailCoord = noiseCoord * uDetailScale;
+                        float distCamera = distance(p, uCameraPos);
+                        float lodFactor = clamp(distCamera / uLodDistance, 0.0, 1.0);
+
+                        if (lodFactor < 1.0) {
+                            vec3 detailNoise = texture(uDetailTexture, detailCoord).rgb;
+                            float highFreqFBM = detailNoise.r * 0.625 + detailNoise.g * 0.25 + detailNoise.b * 0.125;
+                            float erosionPattern = uPopcornMode ? (1.0 - highFreqFBM) : highFreqFBM;
+                            float currentStrength = uErosionStrength * (1.0 - lodFactor);
+                            
+                            // Apply erosion remapping current density
+                            density = remap(density, erosionPattern * currentStrength, 1.0, 0.0, 1.0);
+                        }
+                    }
+
+                    // Final Vertical Fades (Hard clamp)
+                    float bottomFade = smoothstep(0.0, uCloudBottom, heightPercent);
+                    float topFade = 1.0 - smoothstep(uCloudTop, 1.0, heightPercent);
+                    density *= bottomFade * topFade;
+
+                    return density; // Returns raw density (can be > 0 but < threshold)
+                }
+
+                void main() {
+                    vec4 ndc = vec4(vUv * 2.0 - 1.0, 1.0, 1.0); 
+                    vec4 clip = uInverseProjectionMatrix * ndc;
+                    vec4 view = uInverseViewMatrix * (clip / clip.w);
+                    vec3 worldDir = normalize(view.xyz - uCameraPos);
+
+                    float depthLog = texture(tDepth, vUv).r; 
+                    float geometryViewZ = abs(getLinearDepth(depthLog));
+                    float geoDist = geometryViewZ / dot(worldDir, (uInverseViewMatrix * vec4(0.0, 0.0, -1.0, 0.0)).xyz);
+                    if (depthLog >= 1.0) geoDist = 1e20;
+
+                    vec3 ro = uCameraPos;
+                    vec3 rd = worldDir;
+                    
+                    float rPlanet = uPlanetRadius;                    
+                    float rBase   = uPlanetRadius + uCloudBaseOffset; 
+                    float rTop    = rBase + uCloudHeight;             
+
+                    // Sphere Intersections
+                    vec2 hitOuter = hitSphere(ro, rd, uPlanetCenter, rTop);   
+                    vec2 hitInner = hitSphere(ro, rd, uPlanetCenter, rBase);  
+                    vec2 hitSolid = hitSphere(ro, rd, uPlanetCenter, rPlanet);
+
+                    if (hitOuter.y < 0.0) { 
+                        pc_FragColor = vec4(0.0);
+                        pc_FragDepth = vec4(1e20, 0.0, 0.0, 1.0);
+                        return;
+                    }
+
+                    float tNear = max(0.0, hitOuter.x);
+                    float tFar  = hitOuter.y;
+                    float distCam = length(ro - uPlanetCenter);
+
+                    if (distCam < rBase) {
+                        if (hitInner.y > 0.0) tNear = max(tNear, hitInner.y);
+                    }
+                    if (hitSolid.x > 0.0) tFar = min(tFar, hitSolid.x);
+                    if (geoDist < tNear) {
+                        pc_FragColor = vec4(0.0);
+                        pc_FragDepth = vec4(geoDist, 0.0, 0.0, 1.0);
+                        return;
+                    }
+                    tFar = min(tFar, geoDist);
+                    tFar = min(tFar, tNear + uMaxDistance);
+
+                    // Blue Noise (Dithering to reduce banding)
+                    vec2 noiseUV = gl_FragCoord.xy / 256.0;
+                    float noiseSliding = texture(tBlueNoise, noiseUV + uBlueNoiseOffset).r;
+                    float noiseStatic = texture(tBlueNoise, noiseUV).r;
+
+                    float t = tNear;
+                    float currentStep = uInitialStep; 
+                    
+                    vec4 cloudColor = vec4(0.0);
+                    
+                    float sunDot = dot(rd, uSunDirection);
+                    float phaseVal = phaseFunction(sunDot);
+                    
+                    float hitSteps = 0.0;
+                    float weightedDepth = 0.0;
+                    float totalAlpha = 0.0;
+
+                    // --- RAYMARCHING LOOP ---
+                    for(int i = 0; i < 1024; i++) {
+                        if (float(i) >= uMaxIterations) break; 
+                        if (t >= tFar) break;
+                        
+                        if (cloudColor.a >= uOpacityClamp) {
+                            cloudColor.a = 1.0; 
+                            break;       
+                        }
+
+                        // Jitter the step based on TAA state
+                        float activeNoise = (t < uGhostingDistanceCutoff) ? noiseStatic : noiseSliding;
+                        float sampleT = t + (currentStep * activeNoise);
+
+                        if (sampleT >= tFar) break;
+
+                        vec3 pos = ro + rd * sampleT;
+                        float rawDens = sampleCloud(pos); 
+                        
+                        // --- [SOFT EDGE IMPLEMENTATION] ---
+                        // Use smoothstep with variable width (uEdgeSoftness).
+                        // If uEdgeSoftness is high, slow transition (smoke).
+                        // uThreshold defines where noise starts counting as "cloud".
+                        
+                        float finalDens = smoothstep(uThreshold, uThreshold + uEdgeSoftness, rawDens);
+
+                        // --- VOLUMETRIC LIGHTING LOGIC ---
+
+                        if (finalDens > 0.001) {
+                            
+                            // 1. Shadows and Direct Lighting
+                            float shadowOffset = max(currentStep, uShadowOffset); 
+                            vec3 shadowPos = pos + uSunDirection * shadowOffset;
+                            float shadowRaw = sampleCloud(shadowPos);
+                            float shadowDens = shadowRaw; 
+                            
+                            // Beer's Law (Absorption)
+                            float beerLaw = exp(-shadowDens * uAbsorp);
+                            // Powder Effect (Darker edges looking at sun)
+                            float powderTerm = 1.0 - exp(-shadowDens * uPowderScale * 2.0);
+                            float illuminationDecay = beerLaw * mix(1.0, powderTerm * 2.0 + 1.0, uPowderIntensity);
+                            
+                            vec3 sunColorAtPoint = getSunColorAtPoint(pos, uSunDirection);
+                            vec3 directLight = sunColorAtPoint * illuminationDecay * phaseVal * uPhaseIntensity;
+                            
+                            // --- [DAY/NIGHT CORRECTION] ---
+                            vec3 pointUp = normalize(pos - uPlanetCenter);
+                            float sunElevation = dot(pointUp, uSunDirection);
+                            
+                            // Gradient: 1.0 day, 0.0 deep night
+                            float dayNightFactor = smoothstep(-0.1, 0.1, sunElevation);
+
+                            // 2. Dynamic Ambient Lighting
+                            float altFactor = clamp((length(pos - uPlanetCenter) - rBase) / uCloudHeight, 0.0, 1.0);
+                            
+                            // Base Gradient (Dark blue bottom, light top)
+                            vec3 ambientBase = mix(vec3(0.0, 0.05, 0.15), vec3(0.1, 0.2, 0.4), altFactor);
+                            
+                            // Add minimum light for star/moon simulation
+                            vec3 nightAmbient = vec3(0.002, 0.002, 0.005); 
+                            vec3 finalAmbientColor = mix(nightAmbient, ambientBase, dayNightFactor);
+
+                            float skyOcclusion = exp(-shadowDens * uSkylightAbsorption * 0.5);
+                            vec3 internalScattering = vec3(1.0 + finalDens * 0.5); 
+                            
+                            vec3 ambientLight = finalAmbientColor * skyOcclusion * internalScattering * 0.8;
+                            
+                            // Light Sum
+                            vec3 totalLight = directLight + ambientLight;
+                            
+                            // 3. Accumulation
+                            float d = finalDens * uDensityScale * currentStep * 0.001;
+                            float stepAlpha = 1.0 - exp(-d);
+
+                            float stepContribution = stepAlpha * (1.0 - cloudColor.a);
+                            
+                            weightedDepth += sampleT * stepContribution;
+                            totalAlpha += stepContribution;
+
+                            cloudColor.rgb += totalLight * stepAlpha * (1.0 - cloudColor.a);
+                            cloudColor.a += stepAlpha * (1.0 - cloudColor.a);
+                            
+                            t += currentStep;
+                            hitSteps += 1.0;
+
+                            // Quality Control: Stop if enough samples hit
+                            if (hitSteps >= uSteps) break; 
+                            
+                        } else {
+                            // Space Skipping (Jump empty space)
+                            t += currentStep * uSpaceSkipRatio;
+                        }
+                        
+                        // Geometric Step Growth (Optimization for planets)
+                        currentStep *= uStepGrowth;
+                        currentStep = min(currentStep, 3000.0); // Safety cap
+                    }
+
+                    vec4 currentColor = cloudColor;
+                    float outputDepth = (totalAlpha > 0.01) ? (weightedDepth / totalAlpha) : geoDist;
+                    
+                    // --- TAA (TEMPORAL ANTI-ALIASING) REPROJECTION ---
+                    float reprojDepth = (totalAlpha > 0.01) ? outputDepth : min(geoDist, tFar);
+                    vec3 worldPos = uCameraPos + (rd * reprojDepth);
+                    vec4 prevClip = uPreviousViewProjectionMatrix * vec4(worldPos, 1.0);
+                    vec2 prevUv = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+                    bool isInside = (prevUv.x > 0.0 && prevUv.x < 1.0 && prevUv.y > 0.0 && prevUv.y < 1.0);
+
+                    if (isInside) {
+                        vec4 history = texture(tPreviousCloud, prevUv);
+                        float alphaDiff = abs(currentColor.a - history.a);
+                        float distFactor = smoothstep(uGhostingDistanceCutoff, uGhostingDistanceCutoff * 2.0, reprojDepth);
+                        float effectiveSuppression = mix(0.0001, uGhostingSuppression, distFactor);
+                        float motionWeight = 1.0 - smoothstep(0.0, effectiveSuppression, alphaDiff);
+                        float finalBlend = min(uBlendFactor, 0.97) * motionWeight;
+                        
+                        pc_FragColor = mix(currentColor, history, finalBlend);
+                    } else {
+                        pc_FragColor = currentColor;
+                    }
+
+                    pc_FragDepth = vec4(outputDepth, 0.0, 0.0, 1.0);
+                }
+            `
+        };
+
+        // =========================================================================================
+        // FinalCompositorShader - Calculates Atmosphere + Blends Solid Scene + Blends TAA Clouds
+        // =========================================================================================
+        // UPDATED WITH MIE CONTROL (13-POINT SAMPLING)
+        // =========================================================================================
+        const FinalCompositorShader = {
+            vertexShader: /* glsl */ `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = vec4(position, 1.0);
+                }
+            `,
+            // Fragment Shader - Atmosphere logic with leak correction
+            fragmentShader: /* glsl */ `
+                precision highp float;
+
+                // --- Inputs ---
+                uniform sampler2D tScene;        
+                uniform sampler2D tClouds;       
+                uniform sampler2D tCloudDepth; 
+                uniform sampler2D tDepth;
+                uniform sampler2D tGodRays;
+                uniform sampler2D tSunVisibility; // <--- THIS IS THE KEY (Result of 13-point sample)
+
+                uniform float uLogDepthBufFC;
+                uniform float uExposure;
+                uniform vec3 uSunPhysicalColor; 
+                uniform float uGodRaysIntensity;
+                uniform mat4 uInverseProjectionMatrix;
+                uniform mat4 uInverseViewMatrix;
+                uniform vec3 uCameraPos;
+                uniform vec3 uSunDirection;
+                uniform float uSunIntensity; 
+                uniform vec3 uRayleighCoeff;
+                uniform vec3 uMieCoeff;
+                uniform vec3 uOzoneCoeff;
+                uniform float uAtmosphereRadius;
+                uniform float uPlanetRadius;
+                uniform vec3 uPlanetCenter;
+                uniform float uRayleighScaleHeight; 
+                uniform float uMieScaleHeight;
+
+                varying vec2 vUv;
+                #define PI 3.14159265359
+
+                vec2 hitSphere(vec3 rayStart, vec3 rayDir, vec3 sphereCenter, float sphereRadius) {
+                    vec3 oc = rayStart - sphereCenter;
+                    float b = dot(oc, rayDir);
+                    float c = dot(oc, oc) - (sphereRadius * sphereRadius);
+                    float h = (b * b) - c;
+                    if (h < 0.0) return vec2(-1.0);
+                    h = sqrt(h);
+                    return vec2(-b - h, -b + h);
+                }
+                
+                vec3 getLightTransmittance(vec3 position, vec3 lightDir) {
+                    float altitude = length(position - uPlanetCenter) - uPlanetRadius;
+                    if (altitude > (uAtmosphereRadius - uPlanetRadius)) return vec3(1.0);
+
+                    vec2 planetIntersect = hitSphere(position, lightDir, uPlanetCenter, uPlanetRadius - 100.0);
+                    if (planetIntersect.x > 0.0) return vec3(0.0);
+
+                    float rawCos = dot(normalize(position - uPlanetCenter), lightDir);
+                    float cosTheta = clamp(rawCos, -1.0, 1.0);
+
+                    float airMass = 1.0 / (max(cosTheta, 0.0) + 0.015 * pow(93.885 - acos(max(cosTheta, 0.0)) * 57.29, -1.253));
+                    
+                    float densR = exp(-max(0.0, altitude) / uRayleighScaleHeight); 
+                    float densM = exp(-max(0.0, altitude) / uMieScaleHeight); 
+                    float densO = max(0.0, 1.0 - abs(altitude - 25000.0) / 15000.0);
+                    
+                    vec3 opticalDepth = (uRayleighCoeff * densR * uRayleighScaleHeight + 
+                                        uMieCoeff * densM * uMieScaleHeight + 
+                                        uOzoneCoeff * densO * 15000.0) * airMass;
+                                                
+                    return exp(-opticalDepth);
+                }
+
+                // --- UPDATED Atmospheric Integration Function ---
+                // Now receives 'sunVisibility' to control Mie scattering brightness
+                vec3 GetAtmosphere(vec3 rayStart, vec3 rayDir, float rayLength, float sunVisibility, out vec3 totalTransmittance) {
+                    vec2 atmosIntersection = hitSphere(rayStart, rayDir, uPlanetCenter, uAtmosphereRadius);
+                    if (atmosIntersection.y < 0.0) { 
+                        totalTransmittance = vec3(1.0); 
+                        return vec3(0.0); 
+                    }
+
+                    float tMin = max(0.0, atmosIntersection.x);
+                    float tMax = min(rayLength, atmosIntersection.y);
+                    
+                    vec2 planetIntersection = hitSphere(rayStart, rayDir, uPlanetCenter, uPlanetRadius);
+                    if (planetIntersection.x > 0.0 && planetIntersection.x < tMax) {
+                        tMax = planetIntersection.x;
+                    }
+
+                    if (tMax <= tMin) { 
+                        totalTransmittance = vec3(1.0); 
+                        return vec3(0.0); 
+                    }
+
+                    const int NUM_STEPS = 16;
+                    float stepSize = (tMax - tMin) / float(NUM_STEPS);
+                    float t = tMin + stepSize * 0.5;
+
+                    vec3 totalScattering = vec3(0.0);
+                    totalTransmittance = vec3(1.0);
+
+                    float costh = dot(rayDir, uSunDirection);
+                    float phaseR = (3.0 / (16.0 * PI)) * (1.0 + costh * costh);
+                    float g = 0.85; 
+                    float phaseM = (3.0 / (8.0 * PI)) * ((1.0 - g*g) * (1.0 + costh*costh)) / ((2.0 + g*g) * pow(1.0 + g*g - 2.0*g*costh, 1.5));
+
+                    // Multiply Mie phase (bright halo) by sun visibility.
+                    // If sun is hidden (sunVisibility ~ 0.0), phaseM becomes zero.
+                    // This removes light "leaking" through mountains/terrain.
+                    float activePhaseM = phaseM * sunVisibility;
+
+                    for (int i = 0; i < NUM_STEPS; ++i) {
+                        vec3 p = rayStart + rayDir * t;
+                        float height = length(p - uPlanetCenter) - uPlanetRadius;
+                        height = max(0.0, height);
+
+                        float dR = exp(-height / uRayleighScaleHeight);
+                        float dM = exp(-height / uMieScaleHeight);
+                        float dO = max(0.0, 1.0 - abs(height - 25000.0) / 15000.0);
+                        
+                        vec3 sigmaExtinction = uRayleighCoeff * dR + uMieCoeff * dM * 1.1 + uOzoneCoeff * dO;
+                        
+                        // Use activePhaseM here instead of raw phaseM
+                        vec3 sigmaScattering = uRayleighCoeff * dR * phaseR + uMieCoeff * dM * activePhaseM;
+                        
+                        vec3 stepTransmittance = exp(-sigmaExtinction * stepSize);
+                        vec3 sunTransmittance = getLightTransmittance(p, uSunDirection);
+                        
+                        totalScattering += sigmaScattering * sunTransmittance * totalTransmittance * stepSize;
+                        totalTransmittance *= stepTransmittance;
+                        t += stepSize;
+                    }
+                    return totalScattering * uSunIntensity;
+                }
+
+                vec3 getWorldPosition(float depth, vec2 uv) {
+                    float viewZ = -1.0 * (exp2(depth / (uLogDepthBufFC * 0.5)) - 1.0);
+                    vec4 ndcRay = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+                    vec4 viewRay = uInverseProjectionMatrix * ndcRay;
+                    viewRay.xyz /= viewRay.w;
+                    vec3 rayDirView = normalize(viewRay.xyz);
+                    float dist = abs(viewZ) / abs(rayDirView.z);
+                    vec3 rayDirWorld = (uInverseViewMatrix * vec4(rayDirView, 0.0)).xyz;
+                    return uCameraPos + (normalize(rayDirWorld) * dist);
+                }
+
+                vec3 GetSunDisc(vec3 rayDir, vec3 sunDir, vec3 sunColor) {
+                    float costh = dot(rayDir, sunDir);
+                    float core = smoothstep(0.99985, 0.99995, costh);
+                    float glow = pow(max(costh, 0.0), 9000.0) * 0.5;
+                    return (vec3(core) + vec3(glow)) * sunColor * 10.0;
+                }
+                
+                void main() {
+                    vec4 sceneData = texture2D(tScene, vUv);
+                    float depth = texture2D(tDepth, vUv).r;
+                    vec4 cloudData = texture2D(tClouds, vUv);
+                    float cloudDepth = texture2D(tCloudDepth, vUv).r; 
+
+                    // --- STEP 1: Read the 13-point system result ---
+                    // Read the smooth value (0.0 to 1.0) indicating if sun is visible.
+                    float sunVis = texture2D(tSunVisibility, vec2(0.5)).r;
+                    
+                    vec4 ndc = vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+                    vec4 viewRay = uInverseProjectionMatrix * ndc;
+                    vec3 rayDir = normalize((uInverseViewMatrix * vec4(viewRay.xyz, 0.0)).xyz);
+                    vec3 rayStart = uCameraPos;
+
+                    float rayLength = 1.0e10; 
+                    bool isSky = true;
+                    if (depth < 1.0) {
+                        vec3 worldPos = getWorldPosition(depth, vUv);
+                        rayLength = length(worldPos - rayStart);
+                        isSky = false;
+                    }
+
+                    vec3 totalTransmittance;
+                    
+                    // --- STEP 2: Pass 'sunVis' to atmosphere calculation ---
+                    // This ensures the sun's atmospheric glow fades if sun is occluded.
+                    vec3 atmosphereColor = GetAtmosphere(rayStart, rayDir, rayLength, sunVis, totalTransmittance);
+                    
+                    vec3 finalComposite;
+                    
+                    if (isSky) {
+                        finalComposite = atmosphereColor;
+                        vec2 sunBlockCheck = hitSphere(rayStart, uSunDirection, uPlanetCenter, uPlanetRadius - 1000.0);
+                        if (sunBlockCheck.x < 0.0) {
+                            vec3 sunPhysicalColor = getLightTransmittance(rayStart, uSunDirection) * uSunIntensity;
+                            finalComposite += GetSunDisc(rayDir, uSunDirection, sunPhysicalColor);
+                        }
+                    } else {
+                        // Blend solid scene with atmospheric fog
+                        finalComposite = atmosphereColor + (sceneData.rgb * totalTransmittance);
+                    }
+
+                    // Blend clouds on top
+                    if (cloudData.a > 0.01 && cloudDepth < rayLength) {
+                        vec3 cloudTransmittance;
+                        
+                        // --- STEP 3: Pass 'sunVis' to fog over clouds as well ---
+                        vec3 cloudFog = GetAtmosphere(rayStart, rayDir, cloudDepth, sunVis, cloudTransmittance);
+                        
+                        vec3 bgAttenuated = finalComposite * (1.0 - cloudData.a);
+                        vec3 cloudAttenuated = cloudData.rgb * cloudTransmittance;
+                        vec3 fogOnCloud = cloudFog * cloudData.a;
+                        
+                        finalComposite = bgAttenuated + cloudAttenuated + fogOnCloud;
+                    }
+
+                    // God Rays and Tone Mapping
+                    vec3 godRaysColor = texture2D(tGodRays, vUv).rgb;
+                    
+                    // Note: 'sunVis' is already used for God Rays here, as before
+                    finalComposite += godRaysColor * uSunPhysicalColor * uGodRaysIntensity * sunVis;
+
+                    // Exposure and Filmic Tone Mapping
+                    finalComposite *= uExposure;
+                    float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+                    finalComposite = clamp((finalComposite * (a * finalComposite + b)) / (finalComposite * (c * finalComposite + d) + e), 0.0, 1.0);
+                    
+                    // Gamma Correction
+                    gl_FragColor = vec4(pow(finalComposite, vec3(1.0 / 2.2)), 1.0);
+                }
+            `
+        };
+
+        // =========================================================================================
+        // GOD RAYS SYSTEM SHADERS
+        // =========================================================================================
+        // Generic Vertex Shader for Full-Screen Passes
+        const FullScreenQuadVS = /* glsl */ `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `;
+
+        // Generates the Occlusion Mask (Black and White) with ENHANCED CONTRAST
+        const OcclusionShaderFS = /* glsl */ `
+            precision highp float;
+            
+            // Input: Main scene depth
+            uniform sampler2D tSceneDepth;
+            // Cloud texture (RGB = Color, A = Density)
+            uniform sampler2D tClouds; 
+            
+            uniform vec2 uSunPositionScreen;
+            uniform bool uSunInFront;
+            uniform float uAspectRatio; 
+            
+            // Controls how dense a cloud must be to block the sun
+            // Low values (e.g., 0.3) make thin clouds block more light (strong shadows)
+            uniform float uCloudThreshold; 
+
+            varying vec2 vUv;
+
+            void main() {
+                vec4 finalColor = vec4(0.0, 0.0, 0.0, 1.0);
+
+                if (uSunInFront) {
+                    vec2 diff = vUv - uSunPositionScreen;
+                    diff.x *= uAspectRatio; 
+                    float dist = length(diff);
+                    
+                    // Draw sun disc
+                    float sunDisk = 1.0 - smoothstep(0.02, 0.06, dist);
+
+                    if (sunDisk > 0.001) {
+                        // 1. Occlusion by Solid Geometry (Mountains/Planet)
+                        float depth = texture2D(tSceneDepth, vUv).r;
+                        float geometryVisibility = (depth < 0.9999) ? 0.0 : 1.0; 
+
+                        // 2. Occlusion by Clouds (CORRECTED AND ENHANCED)
+                        float cloudAlpha = texture2D(tClouds, vUv).a;
+                        
+                        // HERE'S THE TRICK:
+                        // Use smoothstep to increase block contrast.
+                        // If uCloudThreshold is 0.5, any cloud with alpha > 0.5 becomes a full block (0.0).
+                        // This creates sharp "holes" in the sun disc, generating defined rays.
+                        float cloudBlocker = smoothstep(0.0, uCloudThreshold, cloudAlpha);
+                        
+                        // Final visibility (Invert blocker: 1.0 is transparent, 0.0 is blocked)
+                        float cloudVisibility = 1.0 - cloudBlocker;
+                        
+                        // Combine all
+                        float totalVisibility = geometryVisibility * cloudVisibility;
+                        
+                        // Apply to sun disc
+                        finalColor = vec4(vec3(sunDisk * totalVisibility), 1.0);
+                    }
+                }
+                gl_FragColor = finalColor;
+            }
+        `;
+
+        // Generates God Rays (Radial Blur)
+        const GodRaysShaderFS = /* glsl */ `
+            precision highp float;
+            
+            uniform sampler2D tOcclusion;    
+            uniform vec2 uSunPositionScreen; 
+            
+            uniform float uDensity;   
+            uniform float uDecay;     
+            uniform float uWeight;    
+            uniform float uExposure;  
+            
+            varying vec2 vUv;
+
+            #define NUM_SAMPLES 80
+
+            void main() {
+                vec2 deltaTextCoord = vUv - uSunPositionScreen;
+                deltaTextCoord *= uDensity / float(NUM_SAMPLES);
+                
+                float illuminationDecay = 1.0;
+                vec4 fragColor = vec4(0.0);
+                vec2 texCoord = vUv;
+
+                for(int i=0; i < NUM_SAMPLES; i++) {
+                    texCoord -= deltaTextCoord;
+                    vec4 sampleColor = texture2D(tOcclusion, texCoord);
+                    
+                    sampleColor *= illuminationDecay * uWeight;
+                    fragColor += sampleColor;
+                    illuminationDecay *= uDecay;
+                }
+                
+                gl_FragColor = fragColor * uExposure;
+            }
+        `;
+
+        // ANTI-FLICKER: Smooths the sun's appearance/disappearance
+        const SunStateShaderFS = /* glsl */ `
+            precision highp float;
+
+            uniform sampler2D tOcclusion;      // Occlusion mask
+            uniform sampler2D tPreviousState;  // Previous frame result
+            uniform vec2 uSunPositionScreen;   // Sun position
+            uniform float uAspectRatio;        
+
+            // Function to read visibility at a point on the mask
+            float sampleVis(vec2 uv, vec2 offset) {
+                return texture2D(tOcclusion, uv + offset).r;
+            }
+
+            void main() {
+                // 1. Read previous state (0.0 or 1.0)
+                float previousState = texture2D(tPreviousState, vec2(0.5)).r;
+
+                // 2. Sample 13 points on occlusion mask around the sun
+                float r1 = 0.008, r2 = 0.01; 
+                vec2 center = uSunPositionScreen;
+                float totalVis = 0.0;
+                totalVis += sampleVis(center, vec2(0.0));
+                totalVis += sampleVis(center, vec2(r1, 0.0));
+                totalVis += sampleVis(center, vec2(-r1, 0.0));
+                totalVis += sampleVis(center, vec2(0.0, r1 * uAspectRatio));
+                totalVis += sampleVis(center, vec2(0.0, -r1 * uAspectRatio));
+                totalVis += sampleVis(center, vec2(r2, 0.0));
+                totalVis += sampleVis(center, vec2(-r2, 0.0));
+                totalVis += sampleVis(center, vec2(0.0, r2 * uAspectRatio));
+                totalVis += sampleVis(center, vec2(0.0, -r2 * uAspectRatio));
+                float diag = r2 * 0.7;
+                totalVis += sampleVis(center, vec2(diag, diag * uAspectRatio));
+                totalVis += sampleVis(center, vec2(-diag, diag * uAspectRatio));
+                totalVis += sampleVis(center, vec2(diag, -diag * uAspectRatio));
+                totalVis += sampleVis(center, vec2(-diag, -diag * uAspectRatio));
+
+                // 3. Hysteresis Logic (prevents flickering)
+                float newState = previousState; // Default to old state
+                if (totalVis < 0.1) {
+                    newState = 0.0; // If EVERYTHING is blocked, turn off
+                } else if (totalVis > 3.0) {
+                    newState = 1.0; // If a considerable area is visible, turn on
+                }
+                // If between 0.1 and 3.0, nothing happens, preventing a single flickering pixel from toggling the sun.
+
+                // 4. Smooth transition between states over time
+                float finalOutput = mix(previousState, newState, 0.1);
+
+                gl_FragColor = vec4(finalOutput, 0.0, 0.0, 1.0);
+            }
+        `;
+
+        // =========================================================================================
+        // 3. BASIC SETUP (SCENE, CAMERA, RENDERER)
+        // =========================================================================================
+        
+        // --- 3.1 Global Initialization ---
+        const scene = new THREE.Scene();
+        const clock = new THREE.Clock();
+
+        // --- 3.0.1 FLOATING ORIGIN STATE ---
+        // This object stores the "true" position of the player in the infinite universe.
+        const VIRTUAL_CAMERA = {
+            position: new THREE.Vector3(0, 0, 0)
+        };
+             
+        const cameraFarPlane = WORLD_CONFIG.physical.planetRadius * 2; // Use physical radius       
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, cameraFarPlane);
+
+        // Initial Camera Position in the Universe (X, Y, Z)
+        // Y is altitude relative to the planet's surface (Y=0)
+        const startPosition = { 
+            x: 0, 
+            y: 1010.0, 
+            z: 30.0 
+        };
+        
+        // IMPORTANT: The initial position of the physical camera no longer matters,
+        // as it will be zeroed out in the 'animate' loop. What matters is the VIRTUAL position.
+        camera.position.set(0, 0, 0); // Can even be (0,0,0) here.
+
+        // --- INITIALIZING THE "REAL" PLAYER POSITION ---
+        // Sets the true initial coordinates in the virtual camera.
+        VIRTUAL_CAMERA.position.set(startPosition.x, startPosition.y, startPosition.z);
+        console.log("System: Floating Origin - Virtual Camera Initialized at", VIRTUAL_CAMERA.position);
+
+        // Renderer Configuration (High Performance)
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true, 
+            powerPreference: "high-performance",
+            logarithmicDepthBuffer: true 
+        });
+        // Optimization: Limit pixel ratio to 1.5 to avoid "over-sampling" on very dense screens
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // FPS Monitor
+        const stats = new Stats();
+        stats.dom.style.position = 'relative';
+        document.getElementById('hud-container-bottom-left').appendChild(stats.dom);
+
+        // Logarithmic Constant Calculation (Internal Three.js math for the Shader)
+        const logDepthBufFC = 2.0 / ( Math.log( cameraFarPlane + 1.0 ) / Math.LN2 );
+
+        // --- TAA SYSTEM (PING-PONG BUFFERS & MATRICES) ---
+        let cloudRenderTargetRead, cloudRenderTargetWrite; // Read (History) and Write (Current) buffers
+        let previousViewProjectionMatrix = new THREE.Matrix4(); // Stores the camera matrix from the previous frame
+        let currentViewProjectionMatrix = new THREE.Matrix4();  // Helper for calculations
+        let frameCounter = 0; // Frame counter to animate the jitter noise
+        // ---------------------------------------------------
+        let finalCompositorScene, finalCompositorCamera, finalCompositorMaterial;
+
+        // --- GOD RAYS SYSTEM ---
+        let occlusionRenderTarget, godRaysRenderTarget;
+        let sunStateTargetRead, sunStateTargetWrite;
+        let occlusionScene, occlusionCamera, occlusionQuad;
+        let godRaysScene, godRaysCamera, godRaysQuad;
+        let sunStateScene, sunStateCamera, sunStateQuad;
+        // ----------------------------
+
+
+        // =========================================================================================
+        // 4. THE PHYSICAL WORLD (SCENE OBJECTS)
+        // =========================================================================================
+
+        // --- WORLD CONTAINER ---
+        // Group that will contain all physical world objects.
+        // It will be moved inversely to the virtual camera's position.
+        const worldContainer = new THREE.Group();
+        scene.add(worldContainer);
+
+        // --- 4.1 The Planet (Ground) ---
+        // High-resolution sphere geometry to look smooth up close
+        const planetGeometry = new THREE.SphereGeometry(1, 256, 256); 
+        // Ensures lighting is calculated smoothly across polygons
+        planetGeometry.computeVertexNormals();
+
+        // Standard material that reacts realistically to light (PBR)
+        const planetMaterial = new THREE.MeshStandardMaterial({
+            color: WORLD_CONFIG.planet.color,
+            roughness: WORLD_CONFIG.planet.roughness,
+            metalness: WORLD_CONFIG.planet.metalness,
+            flatShading: false
+        });
+
+        const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+
+        // IMPORTANT: Coordinate System Change
+        // The planet is positioned so its top surface is at Y=0.
+        // This simplifies all altitude calculations: camera.position.y is altitude over sea level.
+        const R = WORLD_CONFIG.physical.planetRadius;
+        planetMesh.scale.set(R, R, R);
+        planetMesh.position.set(0, -R, 0); // Center is at -R, so the top is at 0.
+
+        planetMesh.visible = WORLD_CONFIG.debug.showPlanet;
+        worldContainer.add(planetMesh);
+
+        // --- 4.2 The Sun (Light) ---
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        scene.add(directionalLight);
+
+        // --- 4.3 Terrain (External Assets) ---
+        const gltfLoader = new GLTFLoader();
+        gltfLoader.load("https://dl.dropboxusercontent.com/scl/fi/zwbmvhasz89use9j1ksc2/Plano-Padr-o-Prototipagem-com-Terreno350km.glb?rlkey=wu14liwxm5k1qyqwbfpn8lkps", (gltf) => {
+            const terrain = gltf.scene;
+            terrain.position.set(0, 0, 0); 
+            worldContainer.add(terrain);
+            console.log('System: Terrain loaded.');
+        });
+
+        // --- 4.4 Debug Visuals (Atmosphere Wireframes) ---
+        const atmosMinGeo = new THREE.IcosahedronGeometry(1, 32);
+        const atmosMaxGeo = new THREE.IcosahedronGeometry(1, 32);
+        
+        const sphereMin = new THREE.Mesh(atmosMinGeo, new THREE.MeshBasicMaterial({ 
+            color: 0xffa500, wireframe: true, transparent: true, opacity: 0.2 
+        }));
+        const sphereMax = new THREE.Mesh(atmosMaxGeo, new THREE.MeshBasicMaterial({ 
+            color: 0xff00ff, wireframe: true, transparent: true, opacity: 0.2
+        }));
+        
+        sphereMin.visible = WORLD_CONFIG.debug.showAtmosphere; 
+        sphereMax.visible = WORLD_CONFIG.debug.showAtmosphere; 
+        worldContainer.add(sphereMin);
+        worldContainer.add(sphereMax);
+
+
+        // =========================================================================================
+        // 5. SYSTEMS (ENGINE SUBSYSTEMS)
+        // =========================================================================================
+
+        // -----------------------------------------------------------------------------------------
+        // SYSTEM A: UTILS & TEXTURES
+        // -----------------------------------------------------------------------------------------
+
+        // Blue Noise Loading
+        const textureLoader = new THREE.TextureLoader();
+        const blueNoiseTexture = textureLoader.load('https://dl.dropboxusercontent.com/scl/fi/trdf9pqmfct3zt5jckum7/BlueNoiseFraco.png?rlkey=k4b7zr8f1avqwyxz4szd4yuul');
+        blueNoiseTexture.wrapS = THREE.RepeatWrapping; 
+        blueNoiseTexture.wrapT = THREE.RepeatWrapping;
+        blueNoiseTexture.minFilter = THREE.NearestFilter; 
+        blueNoiseTexture.magFilter = THREE.NearestFilter;
+
+        // -----------------------------------------------------------------------------------------
+        // SYSTEM B: 3D TEXTURE GENERATION (BAKE)
+        // -----------------------------------------------------------------------------------------
+
+        // Material used ONLY for the Bake
+        const sliceMaterial = new THREE.ShaderMaterial({
+            vertexShader: CloudGeneratorShader.vertexShader,
+            fragmentShader: CloudGeneratorShader.fragmentShader,
+            side: THREE.DoubleSide,
+            uniforms: {
+                uSliceZ: { value: 0 },
+                
+                // Layer 1
+                uRepeat1: { value: WORLD_CONFIG.generation.layer1.repeat },
+                uScale1: { value: WORLD_CONFIG.generation.layer1.scale },
+                uSeed1: { value: WORLD_CONFIG.generation.layer1.seed },
+                
+                // Layer 2
+                uRepeat2: { value: WORLD_CONFIG.generation.layer2.repeat },
+                uScale2: { value: WORLD_CONFIG.generation.layer2.scale },
+                uSeed2: { value: WORLD_CONFIG.generation.layer2.seed },
+
+                uMixStrength: { value: WORLD_CONFIG.generation.mixStrength },
+                
+                uErosion: { value: WORLD_CONFIG.generation.erosion },   
+                uContrast: { value: WORLD_CONFIG.generation.contrast },
+            }
+        });
+
+        // Material for Detail Bake
+        const detailMaterial = new THREE.ShaderMaterial({
+            vertexShader: DetailGeneratorShader.vertexShader,
+            fragmentShader: DetailGeneratorShader.fragmentShader,
+            side: THREE.DoubleSide,
+            uniforms: {
+                uSliceZ: { value: 0 },
+                uScaleR: { value: WORLD_CONFIG.generation.detail.scaleR },
+                uScaleG: { value: WORLD_CONFIG.generation.detail.scaleG },
+                uScaleB: { value: WORLD_CONFIG.generation.detail.scaleB },
+                uSeed: { value: WORLD_CONFIG.generation.detail.seed }
+            }
+        });
+
+        // Main Bake Function
+        function bakeCloudTexture() {
+            // Get the current resolution from CONFIG
+            const resolution = WORLD_CONFIG.generation.resolution;
+
+            console.log(`System: Starting 3D Texture Bake (${resolution}x${resolution}x${resolution})...`);
+            
+            const size = resolution * resolution * resolution;
+            const data = new Uint8Array(size);
+            const bakeScene = new THREE.Scene();
+            const bakeCamera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
+            const bakeQuad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), sliceMaterial);
+            bakeScene.add(bakeQuad);
+            
+            // Create a render target of the chosen size
+            const renderTarget = new THREE.WebGLRenderTarget(resolution, resolution);         
+            const pixelBuffer = new Uint8Array(resolution * resolution * 4);
+
+            // Slicing process
+            for (let z = 0; z < resolution; z++) {
+                sliceMaterial.uniforms.uSliceZ.value = z / resolution;
+                renderer.setRenderTarget(renderTarget);
+                renderer.render(bakeScene, bakeCamera);
+                renderer.readRenderTargetPixels(renderTarget, 0, 0, resolution, resolution, pixelBuffer);
+                
+                for (let i = 0; i < resolution * resolution; i++) {
+                    data[z * resolution * resolution + i] = pixelBuffer[i * 4]; 
+                }
+            }
+
+            // Restore state
+            renderer.setRenderTarget(null);
+
+            // Create the final 3D texture with the new resolution
+            const texture = new THREE.Data3DTexture(data, resolution, resolution, resolution);
+            texture.format = THREE.RedFormat;
+            
+            // --- CHANGE FOR MIPMAPPING (PERFORMANCE) ---
+            // LinearMipmapLinearFilter allows the GPU to choose the ideal resolution based on distance
+            texture.minFilter = THREE.LinearMipmapLinearFilter; 
+            texture.magFilter = THREE.LinearFilter;
+            
+            // Enable automatic Mipmap generation on the GPU
+            texture.generateMipmaps = true; 
+            // -----------------------------------------------
+
+            texture.unpackAlignment = 1;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.wrapR = THREE.RepeatWrapping;
+            texture.needsUpdate = true;
+
+            // Memory cleanup (important when changing resolution multiple times)
+            renderTarget.dispose();
+
+            if (typeof cloudMaterial !== 'undefined' && cloudMaterial) {
+                cloudMaterial.uniforms.uTexture.value = texture;
+            }
+            console.log("System: Bake Complete.");
+        }
+
+        // Bake function for the Detail Texture (Worley)
+        function bakeDetailTexture() {
+            // Pull the updated resolution from WORLD_CONFIG (set by GUI)
+            const resolution = WORLD_CONFIG.generation.detail.resolution;
+
+            console.log(`System: Starting Worley Detail Bake (${resolution}x${resolution}x${resolution})...`);
+            
+            // --- MEMORY CLEANUP LOGIC ---
+            // If a detail texture already exists in the material, we dispose of it from the GPU before creating the next one
+            if (cloudMaterial && cloudMaterial.uniforms.uDetailTexture.value) {
+                cloudMaterial.uniforms.uDetailTexture.value.dispose();
+            }
+
+            const size = resolution * resolution * resolution;
+            const data = new Uint8Array(size * 4); 
+            const bakeScene = new THREE.Scene();
+            const bakeCamera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
+            const bakeQuad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), detailMaterial);
+            bakeScene.add(bakeQuad);
+            
+            // The RenderTarget now follows the dynamic resolution
+            const renderTarget = new THREE.WebGLRenderTarget(resolution, resolution);         
+            const pixelBuffer = new Uint8Array(resolution * resolution * 4);
+
+            for (let z = 0; z < resolution; z++) {
+                detailMaterial.uniforms.uSliceZ.value = z / resolution;
+                renderer.setRenderTarget(renderTarget);
+                renderer.render(bakeScene, bakeCamera);
+                renderer.readRenderTargetPixels(renderTarget, 0, 0, resolution, resolution, pixelBuffer);
+                
+                for (let i = 0; i < resolution * resolution; i++) {
+                    const i4 = i * 4;
+                    const zOffset = z * resolution * resolution * 4;
+                    data[zOffset + i4]     = pixelBuffer[i4];     
+                    data[zOffset + i4 + 1] = pixelBuffer[i4 + 1]; 
+                    data[zOffset + i4 + 2] = pixelBuffer[i4 + 2]; 
+                    data[zOffset + i4 + 3] = 255;                 
+                }
+            }
+
+            renderer.setRenderTarget(null);
+            renderTarget.dispose();
+
+            const texture = new THREE.Data3DTexture(data, resolution, resolution, resolution);
+            texture.format = THREE.RGBAFormat;
+
+            // --- CHANGE FOR MIPMAPPING (PERFORMANCE) ---
+            // Uses smaller versions of the texture when the cloud is far away to save memory
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            
+            // Force creation of detail levels
+            texture.generateMipmaps = true;
+            // -----------------------------------------------
+
+            texture.unpackAlignment = 1;
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.wrapR = THREE.RepeatWrapping;
+            texture.needsUpdate = true;
+
+            if (cloudMaterial) {
+                cloudMaterial.uniforms.uDetailTexture.value = texture;
+            }
+            
+            window.generatedDetailTexture = texture; 
+            console.log("System: New Detail Bake Complete.");
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // SYSTEM C: WEATHER MAP
+        // -----------------------------------------------------------------------------------------
+        
+        let weatherRenderTarget;
+        let weatherBakeScene, weatherBakeCamera, weatherBakeMaterial;
+
+        function initWeatherSystem() {
+            // 1. RenderTarget (Where the map is drawn)
+            weatherRenderTarget = new THREE.WebGLRenderTarget(
+                WORLD_CONFIG.weather.resolution, WORLD_CONFIG.weather.resolution, 
+                { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.HalfFloatType, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping }
+            );
+
+            // 2. Bake Scene
+            weatherBakeScene = new THREE.Scene();
+            weatherBakeCamera = new THREE.OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
+            weatherBakeMaterial = new THREE.ShaderMaterial({
+                vertexShader: WeatherGeneratorShader.vertexShader,
+                fragmentShader: WeatherGeneratorShader.fragmentShader,
+                uniforms: {
+                    uScaleR: { value: WORLD_CONFIG.weather.channelR.scale },
+                    uSeedR: { value: WORLD_CONFIG.weather.channelR.seed },
+                    uPersistR: { value: WORLD_CONFIG.weather.channelR.persistence },
+                    uOffsetR: { value: new THREE.Vector2(0, 0) },
+                    uScaleG: { value: WORLD_CONFIG.weather.channelG.scale },
+                    uSeedG: { value: WORLD_CONFIG.weather.channelG.seed },
+                    uPersistG: { value: WORLD_CONFIG.weather.channelG.persistence },
+                    uOffsetG: { value: new THREE.Vector2(WORLD_CONFIG.weather.channelG.offset, 0) }
+                }
+            });
+            weatherBakeScene.add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), weatherBakeMaterial));
+            
+            // Run the first bake
+            updateWeatherMap();
+            
+            // Connect to main material
+            if (typeof cloudMaterial !== 'undefined' && cloudMaterial) {
+                cloudMaterial.uniforms.tWeatherMap.value = weatherRenderTarget.texture;
+                cloudMaterial.uniforms.uWeatherEnabled.value = WORLD_CONFIG.weather.enable;
+            }
+            console.log("System: Weather Module Initialized.");
+        }
+
+        function updateWeatherMap() {
+            if (!weatherRenderTarget) return;
+            const w = WORLD_CONFIG.weather;
+            const u = weatherBakeMaterial.uniforms;
+
+            // Update Generator Uniforms
+            u.uScaleR.value = w.channelR.scale;
+            u.uSeedR.value = w.channelR.seed;
+            u.uPersistR.value = w.channelR.persistence;
+            u.uScaleG.value = w.channelG.scale;
+            u.uSeedG.value = w.channelG.seed;
+            u.uPersistG.value = w.channelG.persistence;
+            u.uOffsetG.value.x = w.channelG.offset;
+
+            // Update Consumer Uniforms (Cloud Shader)
+            if (typeof cloudMaterial !== 'undefined' && cloudMaterial) {
+                cloudMaterial.uniforms.uWeatherRepeat.value = w.repeat;
+                cloudMaterial.uniforms.uWeatherEnabled.value = w.enable;
+                cloudMaterial.uniforms.uWeatherGEnabled.value = w.channelG.enable;
+                cloudMaterial.uniforms.uWeatherPoleTilt.value = w.poleTilt * (Math.PI / 180);
+                cloudMaterial.uniforms.uWeatherPoleMask.value = w.poleMask;
+                cloudMaterial.uniforms.uWeatherHeightMax.value = w.heightMax;
+                cloudMaterial.uniforms.uWeatherHeightCurve.value = w.heightCurve;
+            }
+
+            // Render data only, no visual preview update
+            renderer.setRenderTarget(weatherRenderTarget);
+            renderer.render(weatherBakeScene, weatherBakeCamera);
+            renderer.setRenderTarget(null);
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // SYSTEM D: DEFERRED RENDERING (POST-PROCESSING & CLOUDS)
+        // -----------------------------------------------------------------------------------------
+        
+        let fsQuadScene, fsQuadCamera, fsQuadMesh, cloudMaterial;
+        let sceneRenderTarget;
+
+        function initDeferredSystem() {
+            // 1. Scene Buffer
+            const pixelRatio = renderer.getPixelRatio();
+            sceneRenderTarget = new THREE.WebGLRenderTarget(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio, {
+                minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat, type: THREE.HalfFloatType
+            });
+            sceneRenderTarget.depthTexture = new THREE.DepthTexture(window.innerWidth * pixelRatio, window.innerHeight * pixelRatio);
+            sceneRenderTarget.depthTexture.type = THREE.UnsignedIntType;
+
+            // --- TAA WITH MRT (Multiple Render Targets) ---
+            // Calculate size based on configured resolution
+            const cloudWidth = Math.floor(window.innerWidth * pixelRatio * WORLD_CONFIG.rendering.taa.resolution);
+            const cloudHeight = Math.floor(window.innerHeight * pixelRatio * WORLD_CONFIG.rendering.taa.resolution);
+
+            // Helper function to create MRT 
+            const createMRT = (w, h) => {
+                // WebGLMultipleRenderTargets creates an array of textures
+                const mrt = new THREE.WebGLMultipleRenderTargets(w, h, 2);
+                
+                // Texture 0: Color + Alpha (Cloud Visual)
+                mrt.texture[0].name = 'CloudColor';
+                mrt.texture[0].format = THREE.RGBAFormat;
+                mrt.texture[0].type = THREE.HalfFloatType;
+                mrt.texture[0].minFilter = THREE.LinearFilter;
+                mrt.texture[0].magFilter = THREE.LinearFilter;
+                
+                // Texture 1: Depth (Distance to cloud)
+                mrt.texture[1].name = 'CloudDepth';
+                mrt.texture[1].format = THREE.RedFormat; // Only 1 channel (R) needed for depth
+                mrt.texture[1].type = THREE.FloatType;   // High precision
+                mrt.texture[1].minFilter = THREE.NearestFilter; // Nearest is better for depth data
+                mrt.texture[1].magFilter = THREE.NearestFilter;
+                
+                return mrt;
+            };
+
+            // Create read and write buffers using the MRT function
+            cloudRenderTargetWrite = createMRT(cloudWidth, cloudHeight);
+            cloudRenderTargetRead = createMRT(cloudWidth, cloudHeight);
+            // ------------------------------------------------------
+
+            // 2. Full Screen Quad Scene (Where we draw the clouds)
+            fsQuadScene = new THREE.Scene();
+            fsQuadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+            // 3. Main Material (The Volumetric Shader)
+            cloudMaterial = new THREE.ShaderMaterial({
+                glslVersion: THREE.GLSL3,
+                vertexShader: CloudVolumeShader.vertexShader,
+                fragmentShader: CloudVolumeShader.fragmentShader,
+                uniforms: {
+                    // Texture Inputs
+                    tDepth: { value: null },
+                    tBlueNoise: { value: blueNoiseTexture },      
+                    uBlueNoiseOffset: { value: new THREE.Vector2(0, 0) }, 
+                    uTexture: { value: null }, 
+                    // INJECTING DETAIL TEXTURE
+                    // If already generated, use it. Otherwise, bake will fill it later.
+                    uDetailTexture: { value: (window.generatedDetailTexture) ? window.generatedDetailTexture : null },                    
+                    tWeatherMap: { value: null }, 
+                    uWindOffset: { value: new THREE.Vector3(0, 0, 0) }, 
+
+                    // EROSION AND LOD UNIFORMS
+                    uDetailScale: { value: WORLD_CONFIG.rendering.detailScale },
+                    uErosionStrength: { value: WORLD_CONFIG.rendering.erosionStrength },
+                    uLodDistance: { value: WORLD_CONFIG.rendering.lodDistance },
+                    uPopcornMode: { value: WORLD_CONFIG.rendering.popcornMode },
+
+                    // --- BASE LOD UNIFORMS ---
+                    uBaseLodMinDist: { value: WORLD_CONFIG.rendering.baseLodMinDist },
+                    uBaseLodMaxDist: { value: WORLD_CONFIG.rendering.baseLodMaxDist },
+                    uBaseLodMaxLevel: { value: WORLD_CONFIG.rendering.baseLodMaxLevel },
+
+                    // --- TAA ---
+                    tPreviousCloud: { value: null },
+                    uPreviousViewProjectionMatrix: { value: new THREE.Matrix4() },
+                    uBlendFactor: { value: WORLD_CONFIG.rendering.taa.blend },
+                    uGhostingSuppression: { value: WORLD_CONFIG.rendering.taa.ghosting },
+                    uGhostingDistanceCutoff: { value: WORLD_CONFIG.rendering.taa.distanceCutoff },
+                    uFrame: { value: 0 },
+                    
+                    // Matrices
+                    uInverseViewMatrix: { value: new THREE.Matrix4() },
+                    uInverseProjectionMatrix: { value: new THREE.Matrix4() },
+                    uCameraPos: { value: new THREE.Vector3() },
+                    uLogDepthBufFC: { value: logDepthBufFC },
+
+                    // --- ENVIRONMENT & PHYSICS ---
+                    uSunDirection: { value: new THREE.Vector3() },
+                    uSunIntensity: { value: WORLD_CONFIG.environment.sunIntensity },
+                    uPlanetCenter: { value: new THREE.Vector3(0, -WORLD_CONFIG.physical.planetRadius, 0) },
+                    uPlanetRadius: { value: WORLD_CONFIG.physical.planetRadius },
+                    uAtmosphereRadius: { value: WORLD_CONFIG.physical.planetRadius + WORLD_CONFIG.physical.atmosphereThickness },
+                    
+                    // Physical Coefficients (To calculate sun color inside shader)
+                    uRayleighCoeff: { value: new THREE.Vector3() },
+                    uMieCoeff: { value: new THREE.Vector3() },
+                    uRayleighScaleHeight: { value: WORLD_CONFIG.physical.rayleighScaleHeight },
+
+                    // Control Inputs
+                    uCloudBaseOffset: { value: WORLD_CONFIG.dimensions.baseY },
+                    uCloudHeight: { value: WORLD_CONFIG.dimensions.height },
+                    
+                    // Rendering
+                    uSteps: { value: WORLD_CONFIG.rendering.steps },
+                    uMaxIterations: { value: WORLD_CONFIG.rendering.maxIterations }, 
+                    uInitialStep: { value: WORLD_CONFIG.rendering.initialStep },     
+                    uStepGrowth: { value: WORLD_CONFIG.rendering.stepGrowth },       
+                    uSpaceSkipRatio: { value: WORLD_CONFIG.rendering.spaceSkipRatio }, 
+                    uMaxDistance: { value: WORLD_CONFIG.rendering.maxDistance },    
+                    uAbsorp: { value: WORLD_CONFIG.rendering.absorp },
+                    uDensityScale: { value: WORLD_CONFIG.rendering.densityScale },
+                    uThreshold: { value: WORLD_CONFIG.rendering.threshold },
+                    uShadowOffset: { value: WORLD_CONFIG.rendering.shadowOffset },
+                    uEdgeSoftness: { value: WORLD_CONFIG.rendering.edgeSoftness },
+
+                    // --- NEW UNIFORMS ---
+                    uSkylightAbsorption: { value: WORLD_CONFIG.rendering.skylightAbsorption },
+                    uPowderScale: { value: WORLD_CONFIG.rendering.powderScale },
+                    uPowderIntensity: { value: WORLD_CONFIG.rendering.powderIntensity },
+                    uPhaseIntensity: { value: WORLD_CONFIG.rendering.phaseIntensity },
+                    uPhaseG: { value: WORLD_CONFIG.rendering.phaseG },
+                    uOpacityClamp: { value: WORLD_CONFIG.rendering.opacityClamp },
+                    // ---------------------------------------
+
+                    uCloudScale: { value: WORLD_CONFIG.rendering.cloudScale },
+                    uGlobalScaleFactor: { value: WORLD_CONFIG.rendering.globalScaleFactor },
+                    
+                    // Shape Generation
+                    uCoverage: { value: WORLD_CONFIG.generation.coverage },
+                    uCovBottomShape: { value: WORLD_CONFIG.generation.shapeBase },
+                    uCovBottomCurve: { value: WORLD_CONFIG.generation.shapeBaseCurve },
+                    uCovTopShape: { value: WORLD_CONFIG.generation.shapeTop },
+                    uCloudBottom: { value: WORLD_CONFIG.generation.opacityBase },
+                    uCloudTop: { value: WORLD_CONFIG.generation.opacityTop },
+                    uFadeCovBottom: { value: WORLD_CONFIG.generation.fadeCoverageBottom },
+                    uFadeCovStart: { value: WORLD_CONFIG.generation.fadeCoverageStart },
+                    uFadeCovEnd: { value: WORLD_CONFIG.generation.fadeCoverageEnd },
+
+                    // Weather
+                    uWeatherEnabled: { value: false },
+                    uWeatherOffset: { value: new THREE.Vector2(0, 0) },
+                    uWeatherRepeat: { value: 1.0 },
+                    uWeatherPoleTilt: { value: 0.0 },
+                    uWeatherPoleMask: { value: 0.0 },
+                    uWeatherGEnabled: { value: false },
+                    uWeatherHeightMax: { value: WORLD_CONFIG.weather.heightMax },
+                    uWeatherHeightCurve: { value: WORLD_CONFIG.weather.heightCurve }
+                },
+                depthWrite: false, depthTest: false
+            });
+
+            fsQuadMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), cloudMaterial);
+            fsQuadMesh.frustumCulled = false; 
+            fsQuadScene.add(fsQuadMesh);
+
+            // --- FINAL COMPOSITOR SETUP ---
+            finalCompositorScene = new THREE.Scene();
+            finalCompositorCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+            finalCompositorMaterial = new THREE.ShaderMaterial({
+                vertexShader: FinalCompositorShader.vertexShader,
+                fragmentShader: FinalCompositorShader.fragmentShader,
+                uniforms: {
+                    // Pipeline inputs
+                    tScene: { value: null },
+                    tClouds: { value: null },
+                    tDepth: { value: null },
+                    tCloudDepth: { value: null },
+
+                    tGodRays: { value: null },
+                    tSunVisibility: { value: null }, // 1x1 anti-flicker texture
+                    uSunPhysicalColor: { value: new THREE.Color(0xffffff) },
+                    uGodRaysIntensity: { value: WORLD_CONFIG.godRays.intensity },
+                    
+                    // Dynamic camera and sun uniforms
+                    uInverseProjectionMatrix: { value: new THREE.Matrix4() },
+                    uInverseViewMatrix: { value: new THREE.Matrix4() },
+                    uCameraPos: { value: new THREE.Vector3() },
+                    uSunDirection: { value: new THREE.Vector3() },
+                    uSunIntensity: { value: WORLD_CONFIG.environment.sunIntensity },
+                    
+                    // Physical parameters (static, updated by GUI)
+                    uPlanetCenter: { value: new THREE.Vector3(0, -WORLD_CONFIG.physical.planetRadius, 0) },
+                    uPlanetRadius: { value: WORLD_CONFIG.physical.planetRadius },
+                    uAtmosphereRadius: { value: WORLD_CONFIG.physical.planetRadius + WORLD_CONFIG.physical.atmosphereThickness },
+
+                    // ==============================================================================
+                    //  CRITICAL CORRECTION:
+                    //  Use .clone() to create an INDEPENDENT COPY of the vectors.
+                    //  This prevents updateAtmosphereUniforms() from modifying the
+                    //  original values in WORLD_CONFIG, which would break the feedback loop.
+                    // ==============================================================================
+                    uRayleighCoeff: { value: WORLD_CONFIG.physical.rayleighCoeff.clone() },
+                    uMieCoeff: { value: WORLD_CONFIG.physical.mieCoeff.clone() },
+                    uOzoneCoeff: { value: WORLD_CONFIG.physical.ozoneCoeff.clone() },
+                    
+                    uRayleighScaleHeight: { value: WORLD_CONFIG.physical.rayleighScaleHeight },
+                    uMieScaleHeight: { value: WORLD_CONFIG.physical.mieScaleHeight },
+
+                    // Constants and controls
+                    uLogDepthBufFC: { value: logDepthBufFC },
+                    uExposure: { value: WORLD_CONFIG.environment.exposure }
+                },
+                depthWrite: false, 
+                depthTest: false
+            });
+
+            const finalCompositorMesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), finalCompositorMaterial);
+            finalCompositorMesh.frustumCulled = false;
+            finalCompositorScene.add(finalCompositorMesh);
+            // -----------------------------------------------------------------
+
+            console.log("System: Deferred Engine + Atmospheric Compositor Initialized.");
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // SYSTEM E: SCREEN EFFECTS (GOD RAYS & ANTI-FLICKER)
+        // -----------------------------------------------------------------------------------------
+
+        function initGodRaysSystem() {
+            // Define effect buffer resolution (half screen for performance)
+            const effectWidth = window.innerWidth * 0.5;
+            const effectHeight = window.innerHeight * 0.5;
+
+            // --- 1. OCCLUSION SETUP ---
+            occlusionRenderTarget = new THREE.WebGLRenderTarget(effectWidth, effectHeight, {
+                minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat, type: THREE.HalfFloatType
+            });
+            occlusionScene = new THREE.Scene();
+            occlusionCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            
+            const occlusionMaterial = new THREE.ShaderMaterial({
+                vertexShader: FullScreenQuadVS,
+                fragmentShader: OcclusionShaderFS,
+                uniforms: {
+                    tSceneDepth: { value: null }, 
+                    tClouds: { value: null },
+                    uSunPositionScreen: { value: new THREE.Vector2(0.5, 0.5) },
+                    uSunInFront: { value: false },
+                    uAspectRatio: { value: window.innerWidth / window.innerHeight },
+                    uCloudThreshold: { value: WORLD_CONFIG.godRays.cloudThreshold }
+                }
+            });
+            occlusionQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), occlusionMaterial);
+            occlusionScene.add(occlusionQuad);
+
+            // --- 2. GOD RAYS SETUP ---
+            godRaysRenderTarget = new THREE.WebGLRenderTarget(effectWidth, effectHeight, {
+                minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+                format: THREE.RGBAFormat, type: THREE.HalfFloatType
+            });
+            godRaysScene = new THREE.Scene();
+            godRaysCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            const godRaysMaterial = new THREE.ShaderMaterial({
+                vertexShader: FullScreenQuadVS,
+                fragmentShader: GodRaysShaderFS,
+                uniforms: {
+                    tOcclusion: { value: occlusionRenderTarget.texture },
+                    uSunPositionScreen: { value: new THREE.Vector2(0.5, 0.5) },
+                    uDensity: { value: WORLD_CONFIG.godRays.density },
+                    uDecay: { value: WORLD_CONFIG.godRays.decay },
+                    uWeight: { value: WORLD_CONFIG.godRays.weight },
+                    uExposure: { value: WORLD_CONFIG.godRays.exposure }
+                }
+            });
+            godRaysQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), godRaysMaterial);
+            godRaysScene.add(godRaysQuad);
+
+            // --- 3. SUN STATE SETUP (ANTI-FLICKER) ---
+            const pars = { 
+                minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, 
+                format: THREE.RedFormat, type: THREE.FloatType 
+            };
+            sunStateTargetRead = new THREE.WebGLRenderTarget(1, 1, pars);
+            sunStateTargetWrite = new THREE.WebGLRenderTarget(1, 1, pars);
+            sunStateScene = new THREE.Scene();
+            sunStateCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+            const sunStateMaterial = new THREE.ShaderMaterial({
+                vertexShader: FullScreenQuadVS,
+                fragmentShader: SunStateShaderFS,
+                uniforms: {
+                    tOcclusion: { value: occlusionRenderTarget.texture },
+                    tPreviousState: { value: sunStateTargetRead.texture },
+                    uSunPositionScreen: { value: new THREE.Vector2(0.5, 0.5) },
+                    uAspectRatio: { value: window.innerWidth / window.innerHeight }
+                }
+            });
+            sunStateQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), sunStateMaterial);
+            sunStateScene.add(sunStateQuad);
+
+            console.log("System: God Rays Module Initialized.");
+        }
+
+
+        // =========================================================================================
+        // 6. UPDATE LOGIC (HELPER FUNCTIONS)
+        // =========================================================================================
+
+        // --- Helper function to calculate physical sun color in JS ---
+        function getPhysicalSunColor(sunDirection, atmosphereParams, sunIntensity, cameraPosition) {
+            const planetRadius = atmosphereParams.planetRadius;
+            const planetCenter = new THREE.Vector3(0, -planetRadius, 0);
+            
+            const vecToCam = new THREE.Vector3().subVectors(cameraPosition, planetCenter);
+            const distToCenter = vecToCam.length();
+            const altitude = distToCenter - planetRadius;
+
+            if (altitude > atmosphereParams.atmosphereThickness) {
+                return new THREE.Color(1, 1, 1).multiplyScalar(sunIntensity);
+            }
+
+            const localUp = vecToCam.normalize();
+            
+            // CRITICAL JS CORRECTION:
+            let rawCos = sunDirection.dot(localUp);
+            // Manual clamp in Javascript
+            let cosTheta = Math.max(-1.0, Math.min(1.0, rawCos));
+            let cosThetaClamped = Math.max(0.0, cosTheta);
+            
+            // JS would also return NaN if acos received > 1
+            let airMass = 1.0 / (cosThetaClamped + 0.15 * Math.pow(93.885 - Math.acos(cosThetaClamped) * 57.29, -1.253));
+            
+            const densityFactor = Math.exp(-altitude / atmosphereParams.rayleighScaleHeight);
+            airMass *= densityFactor;
+
+            const rCoeff = atmosphereParams.rayleighCoeff.clone().multiplyScalar(atmosphereParams.rayleighScale);
+            const mCoeff = atmosphereParams.mieCoeff.clone().multiplyScalar(atmosphereParams.mieScale);
+            const oCoeff = atmosphereParams.ozoneCoeff.clone().multiplyScalar(atmosphereParams.ozoneScale);
+            
+            const totalOpticalDepth = new THREE.Vector3(
+                rCoeff.x * atmosphereParams.rayleighScaleHeight + mCoeff.x * atmosphereParams.mieScaleHeight + oCoeff.x * 15000.0,
+                rCoeff.y * atmosphereParams.rayleighScaleHeight + mCoeff.y * atmosphereParams.mieScaleHeight + oCoeff.y * 15000.0,
+                rCoeff.z * atmosphereParams.rayleighScaleHeight + mCoeff.z * atmosphereParams.mieScaleHeight + oCoeff.z * 15000.0
+            ).multiplyScalar(airMass);
+            
+            const r = Math.exp(-totalOpticalDepth.x);
+            const g = Math.exp(-totalOpticalDepth.y);
+            const b = Math.exp(-totalOpticalDepth.z);
+            
+            return new THREE.Color(r, g, b).multiplyScalar(sunIntensity);
+        }
+
+        // Updates light physics (Sun & Sky color based on angle)
+        function updateEnvironment() {
+            const env = WORLD_CONFIG.environment;
+            const phys = WORLD_CONFIG.physical;
+            
+            // 1. Calculate sun direction from GUI angles
+            const phi = THREE.MathUtils.degToRad(90 - env.sunElevation);
+            const theta = THREE.MathUtils.degToRad(env.sunAzimuth);
+            const sunDir = new THREE.Vector3();
+            sunDir.setFromSphericalCoords(1, phi, theta);
+            
+            // 2. Calculate PHYSICAL sun color using our transplanted function
+            // We pass the camera position because sun color depends on observer altitude
+            // Use Virtual Camera for light physics
+            const posForPhysics = (typeof VIRTUAL_CAMERA !== 'undefined') ? VIRTUAL_CAMERA.position : camera.position;
+            const physicalSunColor = getPhysicalSunColor(sunDir, phys, env.sunIntensity, posForPhysics);
+
+            // 3. Update main scene light (DirectionalLight)
+            // Light position is very far away to simulate parallel sun rays
+            directionalLight.position.copy(sunDir).multiplyScalar(1e7); 
+            directionalLight.color.copy(physicalSunColor);
+            // The light's intensity is now "baked" into its color, so we leave the object intensity at 1
+            directionalLight.intensity = 1.0; 
+            
+            // 4. Clear the scene background. Sky color will be rendered by the atmosphere shader later.
+            scene.background = new THREE.Color(0x000000);
+
+            // 5. Send sun position to the cloud shader
+            if (cloudMaterial) {
+                cloudMaterial.uniforms.uSunDirection.value.copy(sunDir); // Normalized direction
+                cloudMaterial.uniforms.uSunIntensity.value = env.sunIntensity;
+            }
+        }
+
+        // Updates Geometry and Dimensions
+        function updateDimensions() {
+            // Now we use only the physical radius for everything
+            const R = WORLD_CONFIG.physical.planetRadius;
+            const dims = WORLD_CONFIG.dimensions;
+            
+            // Update planet mesh
+            planetMesh.scale.set(R, R, R);
+            planetMesh.position.set(0, -R, 0);
+
+            // Debug spheres are also positioned relative to the new center
+            const planetCenter = new THREE.Vector3(0, -R, 0);
+            const rMin = R + dims.baseY;
+            const rMax = rMin + dims.height;
+
+            sphereMin.scale.set(rMin, rMin, rMin);
+            sphereMin.position.copy(planetCenter); // Add center position
+
+            sphereMax.scale.set(rMax, rMax, rMax);
+            sphereMax.position.copy(planetCenter); // Add center position
+
+            // Update the cloud shader with the correct center and radius
+            if (cloudMaterial) {
+                cloudMaterial.uniforms.uPlanetRadius.value = R;
+                cloudMaterial.uniforms.uCloudBaseOffset.value = dims.baseY;
+                cloudMaterial.uniforms.uCloudHeight.value = dims.height;
+            }
+        }
+
+        // Syncs GUI -> Shader (Generation)
+        function updateGenerationShaders() {
+            const gen = WORLD_CONFIG.generation;
+            
+            // Update Bake Material Uniforms
+            const uSlice = sliceMaterial.uniforms;
+            
+            // Layer 1
+            uSlice.uRepeat1.value = gen.layer1.repeat;
+            uSlice.uScale1.value = gen.layer1.scale;
+            uSlice.uSeed1.value = gen.layer1.seed;
+
+            // Layer 2
+            uSlice.uRepeat2.value = gen.layer2.repeat;
+            uSlice.uScale2.value = gen.layer2.scale;
+            uSlice.uSeed2.value = gen.layer2.seed;
+
+            uSlice.uMixStrength.value = gen.mixStrength;
+            
+            uSlice.uErosion.value = gen.erosion;
+            uSlice.uContrast.value = gen.contrast;
+
+            // Update Cloud Material Uniforms (Final Rendering)
+            if (cloudMaterial) {
+                const uVol = cloudMaterial.uniforms;
+                uVol.uCoverage.value = gen.coverage;
+                uVol.uCovBottomShape.value = gen.shapeBase;
+                uVol.uCovBottomCurve.value = gen.shapeBaseCurve;
+                uVol.uCovTopShape.value = gen.shapeTop;
+                uVol.uCloudBottom.value = gen.opacityBase;
+                uVol.uCloudTop.value = gen.opacityTop;
+                uVol.uFadeCovBottom.value = gen.fadeCoverageBottom; 
+                uVol.uFadeCovStart.value = gen.fadeCoverageStart;
+                uVol.uFadeCovEnd.value = gen.fadeCoverageEnd;
+            }
+        }
+
+        // Syncs GUI -> Shader (Rendering)
+        function updateRenderShaders() {
+            if (!cloudMaterial) return;
+            const ren = WORLD_CONFIG.rendering;
+            const u = cloudMaterial.uniforms;
+
+            // Update new parameters
+            u.uSteps.value = ren.steps;
+            u.uMaxIterations.value = ren.maxIterations;
+            u.uInitialStep.value = ren.initialStep;
+            u.uStepGrowth.value = ren.stepGrowth;
+            u.uSpaceSkipRatio.value = ren.spaceSkipRatio;
+            u.uMaxDistance.value = ren.maxDistance;
+
+            u.uDensityScale.value = ren.densityScale;
+            u.uAbsorp.value = ren.absorp;
+            u.uThreshold.value = ren.threshold;
+            u.uShadowOffset.value = ren.shadowOffset;
+            u.uEdgeSoftness.value = ren.edgeSoftness; 
+            u.uCloudScale.value = ren.cloudScale;
+            u.uGlobalScaleFactor.value = ren.globalScaleFactor;
+
+            u.uSkylightAbsorption.value = ren.skylightAbsorption;
+            u.uPowderScale.value = ren.powderScale;
+            u.uPowderIntensity.value = ren.powderIntensity;
+            u.uPhaseIntensity.value = ren.phaseIntensity;
+            u.uPhaseG.value = ren.phaseG;
+            u.uOpacityClamp.value = ren.opacityClamp;
+
+            // Erosion parameters
+            u.uDetailScale.value = ren.detailScale;
+            u.uErosionStrength.value = ren.erosionStrength;
+            u.uLodDistance.value = ren.lodDistance;
+            u.uPopcornMode.value = ren.popcornMode;
+
+            // --- UPDATE BASE LOD ---
+            u.uBaseLodMinDist.value = ren.baseLodMinDist;
+            u.uBaseLodMaxDist.value = ren.baseLodMaxDist;
+            u.uBaseLodMaxLevel.value = ren.baseLodMaxLevel;
+        }
+
+
+        // =========================================================================================
+        // 7. INTERFACE AND CONTROLS (GUI & INPUTS)
+        // =========================================================================================
+
+        // Helper Function: Syncs GUI -> Compositor Shader AND Cloud Shader
+        function updateAtmosphereUniforms() {
+            const phys = WORLD_CONFIG.physical;
+            const planetCenter = new THREE.Vector3(0, -phys.planetRadius, 0); // Get current center position
+            
+            // 1. Update Final Compositor (Sky)
+            if (finalCompositorMaterial) {
+                const u = finalCompositorMaterial.uniforms;
+                u.uPlanetRadius.value = phys.planetRadius;
+                u.uAtmosphereRadius.value = phys.planetRadius + phys.atmosphereThickness;
+                u.uRayleighCoeff.value.copy(phys.rayleighCoeff).multiplyScalar(phys.rayleighScale);
+                u.uMieCoeff.value.copy(phys.mieCoeff).multiplyScalar(phys.mieScale);
+                u.uOzoneCoeff.value.copy(phys.ozoneCoeff).multiplyScalar(phys.ozoneScale);
+                u.uRayleighScaleHeight.value = phys.rayleighScaleHeight;
+                u.uMieScaleHeight.value = phys.mieScaleHeight;
+            }
+
+            // 2. Update Cloud Shader
+            if (cloudMaterial) {
+                const uCloud = cloudMaterial.uniforms;
+                uCloud.uAtmosphereRadius.value = phys.planetRadius + phys.atmosphereThickness;
+                // Send coefficients already multiplied by scale
+                uCloud.uRayleighCoeff.value.copy(phys.rayleighCoeff).multiplyScalar(phys.rayleighScale);
+                uCloud.uMieCoeff.value.copy(phys.mieCoeff).multiplyScalar(phys.mieScale);
+                uCloud.uRayleighScaleHeight.value = phys.rayleighScaleHeight;
+            }
+        }
+
+        const gui = new GUI({ title: 'Engine Control - Planetary Atmosphere' });
+        gui.close();
+
+        // Folder: Flight
+        const fFly = gui.addFolder('Flight Controls');
+        fFly.add(WORLD_CONFIG.flight, 'speed', 1, WORLD_CONFIG.flight.maxSpeed).name('🦅 Speed');
+        fFly.add({ reset: () => { VIRTUAL_CAMERA.position.set(0, WORLD_CONFIG.dimensions.baseY + 100, 1000000); }}, 'reset').name('Reset Position');    
+
+        // Folder: Environment
+        const fEnv = gui.addFolder('☀️ Sun & Camera');
+        fEnv.add(WORLD_CONFIG.environment, 'sunElevation', -90, 90).name('Sun: Elevation').onChange(updateEnvironment);
+        fEnv.add(WORLD_CONFIG.environment, 'sunAzimuth', 0, 360).name('Sun: Azimuth').onChange(updateEnvironment);
+        fEnv.add(WORLD_CONFIG.environment, 'sunIntensity', 0, 100).name('Sun: Intensity').onChange(updateEnvironment);
+        fEnv.add(WORLD_CONFIG.environment, 'exposure', 0, 2).name('Final Exposure');
+
+        // Folder: Atmosphere
+        const fAtmos = gui.addFolder('🌍 Atmosphere (Physics)');
+        fAtmos.add(WORLD_CONFIG.physical, 'atmosphereThickness', 10000, 200000).name('Thickness (m)').onChange(updateAtmosphereUniforms);
+        fAtmos.add(WORLD_CONFIG.physical, 'rayleighScale', 0, 10).name('Rayleigh Strength (Blue)').onChange(updateAtmosphereUniforms);
+        fAtmos.add(WORLD_CONFIG.physical, 'mieScale', 0, 10).name('Mie Strength (Haze)').onChange(updateAtmosphereUniforms);
+        fAtmos.add(WORLD_CONFIG.physical, 'ozoneScale', 0, 2).name('Ozone Strength (Filter)').onChange(updateAtmosphereUniforms);
+        fAtmos.add(WORLD_CONFIG.physical, 'rayleighScaleHeight', 1000, 20000).name('Rayleigh Height (m)').onChange(updateAtmosphereUniforms);
+        fAtmos.add(WORLD_CONFIG.physical, 'mieScaleHeight', 100, 5000).name('Mie Height (m)').onChange(updateAtmosphereUniforms);
+
+        // Folder: Generation
+        const fGen = gui.addFolder('⛅ Shape Studio (Generation)');
+
+        // --- RESOLUTION CONTROL ---
+        fGen.add(WORLD_CONFIG.generation, 'resolution', [16, 32, 64, 128, 256])
+            .name('Volume Resolution')
+            .onChange(() => {               
+                bakeCloudTexture(); // Force a new bake on change
+            });
+        // ----------------------------------
+
+        // Worley Detail Control Folder
+        const fDetail = fGen.addFolder('High-Freq Detail (Worley)');
+        
+        // Helper function to update detail bake on slider change
+        const updateDetailBake = () => {
+            detailMaterial.uniforms.uScaleR.value = WORLD_CONFIG.generation.detail.scaleR;
+            detailMaterial.uniforms.uScaleG.value = WORLD_CONFIG.generation.detail.scaleG;
+            detailMaterial.uniforms.uScaleB.value = WORLD_CONFIG.generation.detail.scaleB;
+            detailMaterial.uniforms.uSeed.value = WORLD_CONFIG.generation.detail.seed;
+            bakeDetailTexture(); // Re-bake
+        };
+
+        // --- RESOLUTION CONTROL ---
+        fDetail.add(WORLD_CONFIG.generation.detail, 'resolution', [8, 16, 32, 64])
+            .name('Detail Resolution')
+            .onChange(() => {               
+                bakeDetailTexture(); // Trigger a new bake process on change
+            });
+
+        fDetail.add(WORLD_CONFIG.generation.detail, 'scaleR', 1, 32, 1).name('Low Freq (R)').onFinishChange(updateDetailBake);
+        fDetail.add(WORLD_CONFIG.generation.detail, 'scaleG', 1, 32, 1).name('Mid Freq (G)').onFinishChange(updateDetailBake);
+        fDetail.add(WORLD_CONFIG.generation.detail, 'scaleB', 1, 32, 1).name('High Freq (B)').onFinishChange(updateDetailBake);
+        fDetail.add(WORLD_CONFIG.generation.detail, 'seed', 0, 10).name('Detail Seed').onFinishChange(updateDetailBake);
+    
+        // --- FOLDER: BASE LAYER 1 (STRUCTURE) ---
+        const fL1 = fGen.addFolder('Layer 1 (Structure)');
+        fL1.add(WORLD_CONFIG.generation.layer1, 'repeat', 1, 20, 1).name('Repetition (Int)').onChange(updateGenerationShaders);
+        fL1.add(WORLD_CONFIG.generation.layer1, 'scale', 1, 20, 1).name('Noise Scale').onChange(updateGenerationShaders);
+        fL1.add(WORLD_CONFIG.generation.layer1, 'seed', 0, 0.6).name('Seed').onChange(updateGenerationShaders);
+        
+        // --- FOLDER: BASE LAYER 2 (DETAIL) ---
+        const fL2 = fGen.addFolder('Layer 2 (Detail)');
+        fL2.add(WORLD_CONFIG.generation.layer2, 'repeat', 1, 20, 1).name('Repetition (Int)').onChange(updateGenerationShaders);
+        fL2.add(WORLD_CONFIG.generation.layer2, 'scale', 1, 20, 1).name('Noise Scale').onChange(updateGenerationShaders);
+        fL2.add(WORLD_CONFIG.generation.layer2, 'seed', 0, 0.6).name('Seed').onChange(updateGenerationShaders);
+
+        // --- MIXER ---
+        fGen.add(WORLD_CONFIG.generation, 'mixStrength', 0.0, 1.0).name('Mix Strength').onChange(updateGenerationShaders);
+
+        // --- GLOBAL MORPHOLOGY ---
+        const fMorph = fGen.addFolder('Global Morphology');
+        fMorph.add(WORLD_CONFIG.generation, 'fadeCoverageBottom', 0.0, 1.0).name('Base Coverage Fade').onChange(updateGenerationShaders);
+        fMorph.add(WORLD_CONFIG.generation, 'fadeCoverageStart', 0.0, 1.0).name('Top Fade Start').onChange(updateGenerationShaders);
+        fMorph.add(WORLD_CONFIG.generation, 'fadeCoverageEnd', 0.0, 1.0).name('Top Fade End').onChange(updateGenerationShaders);
+        fMorph.add(WORLD_CONFIG.generation, 'coverage', 0, 1).name('Coverage').onChange(updateGenerationShaders);
+        fMorph.add(WORLD_CONFIG.generation, 'erosion', 0, 1).name('Erosion').onChange(updateGenerationShaders);
+        fMorph.add(WORLD_CONFIG.generation, 'contrast', 1, 6).name('Contrast').onChange(updateGenerationShaders);
+
+        // Bake Action
+        fGen.add({ action: bakeCloudTexture }, 'action').name('🎨 BAKE 3D TEXTURE');
+        
+        const fShape = fGen.addFolder('Vertical Profile');
+        fShape.add(WORLD_CONFIG.generation, 'shapeBase', 0, 1).name('Base Funnel Height').onChange(updateGenerationShaders);
+        fShape.add(WORLD_CONFIG.generation, 'shapeBaseCurve', 0, 1.0).name('Base Funnel Curve').onChange(updateGenerationShaders); 
+        fShape.add(WORLD_CONFIG.generation, 'shapeTop', 0, 1).name('Top Shape').onChange(updateGenerationShaders);
+        fShape.add(WORLD_CONFIG.generation, 'opacityBase', 0, 1).name('Base Fade').onChange(updateGenerationShaders);
+        fShape.add(WORLD_CONFIG.generation, 'opacityTop', 0, 1).name('Top Fade').onChange(updateGenerationShaders);
+
+        // Folder: Domain Dimensions
+        const fDims = gui.addFolder('Domain Dimensions');
+        fDims.add(WORLD_CONFIG.dimensions, 'height', 0, 200000).name('Cloud Thickness (Y)').onChange(updateDimensions);
+        fDims.add(WORLD_CONFIG.dimensions, 'baseY', -10000, 50000).name('Cloud Altitude').onChange(updateDimensions);
+
+        // Folder: Weather (Macro)
+        const fWeather = gui.addFolder('🗺 Weather Map (Macro)');
+        fWeather.add(WORLD_CONFIG.weather, 'enable').name('Enable Weather Map').onChange(updateWeatherMap);
+        fWeather.add(WORLD_CONFIG.weather, 'repeat', 1, 1000, 1).name('Repetitions on Globe').onChange(updateWeatherMap);
+        fWeather.add(WORLD_CONFIG.weather, 'heightMax', 1000, 80000).name('Max Height (m)').onChange(updateWeatherMap);
+        fWeather.add(WORLD_CONFIG.weather, 'heightCurve', 0.01, 10.0).step(0.01).name('Intensity Curve').onChange(updateWeatherMap);
+        fWeather.add(WORLD_CONFIG.weather, 'poleTilt', 0, 90).name('Axis Tilt').onChange(updateWeatherMap);
+        fWeather.add(WORLD_CONFIG.weather, 'poleMask', 0, 0.5).name('Pole Smoothing').onChange(updateWeatherMap);
+
+        const fWeathR = fWeather.addFolder('Channel R: Coverage');
+        fWeathR.add(WORLD_CONFIG.weather.channelR, 'scale', 1, 1000, 1).name('Scale').onChange(updateWeatherMap);
+        fWeathR.add(WORLD_CONFIG.weather.channelR, 'persistence', 0, 1).name('Persistence').onChange(updateWeatherMap);
+        fWeathR.add(WORLD_CONFIG.weather.channelR, 'seed', 0, 1).name('Seed').onChange(updateWeatherMap);
+
+        const fWeathG = fWeather.addFolder('Channel G: Type/Height');
+        fWeathG.add(WORLD_CONFIG.weather.channelG, 'enable').name('Enable').onChange(updateWeatherMap);
+        fWeathG.add(WORLD_CONFIG.weather.channelG, 'scale', 1, 1000, 1).name('Scale').onChange(updateWeatherMap);
+        fWeathG.add(WORLD_CONFIG.weather.channelG, 'persistence', 0, 1).name('Persistence').onChange(updateWeatherMap);
+        fWeathG.add(WORLD_CONFIG.weather.channelG, 'seed', 0, 1).name('Seed').onChange(updateWeatherMap);
+
+        // Folder: Rendering
+        const fRen = gui.addFolder('🌐 Volumetric Rendering (Optimized)');        
+        // Visual Shape Controls
+        fRen.add(WORLD_CONFIG.rendering, 'cloudScale', 1, 1000).name('Texture Scale').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'globalScaleFactor', 0.0000000001, 0.001).decimals(10).name('Global Scale Factor').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'densityScale', 0.1, 5).name('Global Density').onChange(updateRenderShaders);      
+        fRen.add(WORLD_CONFIG.rendering, 'threshold', 0, 0.5).name('Noise Floor').onChange(updateRenderShaders);
+
+        fRen.add(WORLD_CONFIG.rendering, 'shadowOffset', 100, 5000).name('Shadow Offset (m)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'edgeSoftness', 0.01, 1.0).name('Edge Softness').onChange(updateRenderShaders);
+
+        fRen.add(WORLD_CONFIG.rendering, 'baseLodMinDist', 0, 50000).name('LOD: Start (Max Res)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'baseLodMaxDist', 50000, 1000000).name('LOD: End (Min Res)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'baseLodMaxLevel', 0, 8).step(1).name('LOD: Mipmap Level').onChange(updateRenderShaders);
+
+        // Sub-folder for Erosion and Detail Control
+        const fErosion = fRen.addFolder('Detail Erosion (Popcorn/Wisps)');
+        fErosion.add(WORLD_CONFIG.rendering, 'detailScale', 1.0, 50.0).name('Tiling (Repetition)').onChange(updateRenderShaders);
+        fErosion.add(WORLD_CONFIG.rendering, 'popcornMode').name('Popcorn Mode (Billowy)').onChange(updateRenderShaders);
+        fErosion.add(WORLD_CONFIG.rendering, 'erosionStrength', 0.0, 1.0).name('Erosion Strength').onChange(updateRenderShaders);
+        fErosion.add(WORLD_CONFIG.rendering, 'lodDistance', 1000, 1000000).name('LOD Distance').onChange(updateRenderShaders);
+
+        // Lighting Visual Controls
+        fRen.add(WORLD_CONFIG.rendering, 'absorp', 0, 50).name('Sun Absorption (Beer)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'skylightAbsorption', 0, 20).name('Sky Absorption').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'powderScale', 0, 2).name('Powder Scale').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'powderIntensity', 0, 2).name('Powder Strength').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'phaseG', 0, 0.99).name('Anisotropy (G)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'phaseIntensity', 0, 10).name('Phase Brightness').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'opacityClamp', 0.5, 1.0).name('Solid Cutoff (Clamp)').onChange(updateRenderShaders);
+
+        // Raymarching Optimization Controls
+        fRen.add(WORLD_CONFIG.rendering, 'steps', 1, 256, 1).name('Useful Samples (Hits)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'maxIterations', 10, 1000, 10).name('Max Iterations (GPU)').onChange(updateRenderShaders);       
+        fRen.add(WORLD_CONFIG.rendering, 'initialStep', 10, 500).name('Initial Step (m)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'stepGrowth', 1.0, 1.1).step(0.001).name('Geometric Growth (x)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'spaceSkipRatio', 1.0, 10.0).step(0.1).name('Empty Space Skip (Ratio)').onChange(updateRenderShaders);
+        fRen.add(WORLD_CONFIG.rendering, 'maxDistance', 100000, 1000000).name('Cutoff Distance (m)').onChange(updateRenderShaders);
+
+        // Helper function to update TAA uniforms
+        function updateTAAUniforms() {
+            if (!cloudMaterial) return;
+            cloudMaterial.uniforms.uBlendFactor.value = WORLD_CONFIG.rendering.taa.blend;
+            cloudMaterial.uniforms.uGhostingSuppression.value = WORLD_CONFIG.rendering.taa.ghosting;
+            cloudMaterial.uniforms.uGhostingDistanceCutoff.value = WORLD_CONFIG.rendering.taa.distanceCutoff;
+        }
+        const fTAA = gui.addFolder('⏳ TAA Smoothing');
+        fTAA.add(WORLD_CONFIG.rendering.taa, 'blend', 0.0, 0.99).name('Temporal Blend').onChange(updateTAAUniforms);
+        fTAA.add(WORLD_CONFIG.rendering.taa, 'ghosting', 0.0, 1.0).name('Ghosting Suppression').onChange(updateTAAUniforms);
+        fTAA.add(WORLD_CONFIG.rendering.taa, 'distanceCutoff', 0, 200000).name('Cutoff Distance (m)').onChange(updateTAAUniforms);
+        fTAA.add(WORLD_CONFIG.rendering.taa, 'resolution', 0.1, 1.0).name('Cloud Resolution').onChange(() => {
+            // Trigger resize to recreate buffers
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        // Folder: God Rays
+        const fRays = gui.addFolder('✨ God Rays');
+        fRays.add(WORLD_CONFIG.godRays, 'intensity', 0, 5).name('Final Intensity').onChange(v => {
+            if (finalCompositorMaterial) finalCompositorMaterial.uniforms.uGodRaysIntensity.value = v;
+        });
+        fRays.add(WORLD_CONFIG.godRays, 'density', 0, 2).name('Length').onChange(v => {
+            if (godRaysQuad) godRaysQuad.material.uniforms.uDensity.value = v;
+        });
+        fRays.add(WORLD_CONFIG.godRays, 'decay', 0.9, 1.0).name('Decay').onChange(v => {
+            if (godRaysQuad) godRaysQuad.material.uniforms.uDecay.value = v;
+        });
+        fRays.add(WORLD_CONFIG.godRays, 'weight', 0, 1.0).name('Sample Weight').onChange(v => {
+            if (godRaysQuad) godRaysQuad.material.uniforms.uWeight.value = v;
+        });
+        fRays.add(WORLD_CONFIG.godRays, 'exposure', 0, 1.0).name('Rays Exposure').onChange(v => {
+            if (godRaysQuad) godRaysQuad.material.uniforms.uExposure.value = v;
+        });
+        fRays.add(WORLD_CONFIG.godRays, 'cloudThreshold', 0.1, 1.0).name('Cloud Shadow (Hardness)').onChange(v => {
+            if (occlusionQuad) occlusionQuad.material.uniforms.uCloudThreshold.value = v;
+        });
+
+        // Folder: Animation
+        const fAnim = gui.addFolder('🎬 Atmospheric Animation');       
+        const fAnim3D = fAnim.addFolder('Local Wind (3D Texture Offset)');
+        fAnim3D.add(WORLD_CONFIG.animation.wind3D, 'active').name('Enable');
+        fAnim3D.add(WORLD_CONFIG.animation.wind3D, 'speedX', -0.5, 0.5).name('Speed X');
+        fAnim3D.add(WORLD_CONFIG.animation.wind3D, 'speedY', -0.5, 0.5).name('Speed Y (Vertical)');
+        fAnim3D.add(WORLD_CONFIG.animation.wind3D, 'speedZ', -0.5, 0.5).name('Speed Z');
+        const fAnimWeather = fAnim.addFolder('Weather Rotation (Map Offset)');
+        fAnimWeather.add(WORLD_CONFIG.animation.weatherRotation, 'active').name('Enable');
+        fAnimWeather.add(WORLD_CONFIG.animation.weatherRotation, 'speedU', -0.5, 0.5).name('Rotation (Longitude)');
+        fAnimWeather.add(WORLD_CONFIG.animation.weatherRotation, 'speedV', -0.5, 0.5).name('Latitude (Drift)');
+
+        // Folder: Planet & Scale
+        const fPlanet = gui.addFolder('🌎 Planet & Ocean');
+        fPlanet.add(WORLD_CONFIG.physical, 'planetRadius', 100000, 10000000).name('Planet Radius (m)').onChange(() => {
+            updateDimensions();         
+            updateAtmosphereUniforms(); 
+        });
+        fPlanet.addColor(WORLD_CONFIG.planet, 'color').name('Ocean Color').onChange(c => {
+            planetMesh.material.color.set(c);
+        });
+        fPlanet.add(WORLD_CONFIG.planet, 'roughness', 0, 1).name('Roughness').onChange(v => {
+            planetMesh.material.roughness = v;
+        });
+        fPlanet.add(WORLD_CONFIG.planet, 'metalness', 0, 1).name('Metalness').onChange(v => {
+            planetMesh.material.metalness = v;
+        });
+
+        // Folder: Debug
+        const fDebug = gui.addFolder('👾 Debug Visualizers');
+        fDebug.add(WORLD_CONFIG.debug, 'showPlanet').name('Show Planet').onChange(v => planetMesh.visible = v);
+        fDebug.add(WORLD_CONFIG.debug, 'showAtmosphere').name('Show Atmosphere Shells').onChange(v => { sphereMin.visible = v; sphereMax.visible = v; });
+
+        // --- Inputs (Keyboard/Mouse) ---
+        const controls = new PointerLockControls(camera, document.body);
+        const instructions = document.getElementById('instructions');
+        
+        instructions.addEventListener('click', () => controls.lock());
+        controls.addEventListener('lock', () => instructions.style.display = 'none');
+        controls.addEventListener('unlock', () => instructions.style.display = 'block');
+
+        let moveFwd = false, moveBwd = false, moveLft = false, moveRgt = false, moveUp = false, moveDwn = false;
+
+        const onKey = (e, val) => {
+            switch(e.code) {
+                case 'ArrowUp': case 'KeyW': moveFwd = val; break;
+                case 'ArrowLeft': case 'KeyA': moveLft = val; break;
+                case 'ArrowDown': case 'KeyS': moveBwd = val; break;
+                case 'ArrowRight': case 'KeyD': moveRgt = val; break;
+                case 'Space': moveUp = val; break;
+                case 'ShiftLeft': case 'ShiftRight': moveDwn = val; break;
+            }
+        };
+        document.addEventListener('keydown', e => onKey(e, true));
+        document.addEventListener('keyup', e => onKey(e, false));
+
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const pixelRatio = renderer.getPixelRatio();
+            
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            
+            // Resize Solid Scene Buffer
+            if (sceneRenderTarget) sceneRenderTarget.setSize(width * pixelRatio, height * pixelRatio);
+
+            // --- TAA: RESIZE CLOUD BUFFERS ---
+            const cloudW = Math.floor(width * pixelRatio * WORLD_CONFIG.rendering.taa.resolution);
+            const cloudH = Math.floor(height * pixelRatio * WORLD_CONFIG.rendering.taa.resolution);
+            
+            if (cloudRenderTargetWrite) cloudRenderTargetWrite.setSize(cloudW, cloudH);
+            if (cloudRenderTargetRead) cloudRenderTargetRead.setSize(cloudW, cloudH);
+            // -------------------------------------------------------
+        });
+
+
+        // =========================================================================================
+        // 8. BOOT & MAIN LOOP
+        // =========================================================================================
+
+        // Correct order of initialization (Boot)
+        initDeferredSystem();   // Create the render engine
+        initGodRaysSystem();
+        initWeatherSystem();    // Create the weather system
+        bakeDetailTexture();    // Generate the Worley detail texture
+        bakeCloudTexture();     // CRITICAL: Generate the main 3D cloud texture on page load
+        updateDimensions();     // Apply dimensions
+        updateEnvironment();    // Apply light
+        updateGenerationShaders(); // Apply noise
+        updateRenderShaders();  // Apply render config
+        updateAtmosphereUniforms();
+
+        // HUD Elements
+        const altimeterEl = document.getElementById('altimeter');
+        const speedometerEl = document.getElementById('speedometer');
+        const coordsEl = document.getElementById('coords');
+
+        // --- ANIMATION STATE VARIABLES ---
+        const animState = {
+            accumulatedWind: new THREE.Vector3(0, 0, 0),    // Accumulator for 3D noise
+            accumulatedWeather: new THREE.Vector2(0, 0)     // Accumulator for UV map
+        };
+        
+        // Animation Loop
+        function animate() {
+
+            requestAnimationFrame(animate);
+            stats.update(); 
+            const delta = clock.getDelta();
+
+            // --- LOCK PHYSICAL CAMERA ---
+            // In Floating Origin, the physical camera NEVER leaves zero.
+            // The world rotates and moves around it.
+            camera.position.set(0, 0, 0);
+
+            // --- RELATIVE SHADER UPDATES ---
+            // Calculate where the planet's center is RELATIVE to the camera (0,0,0)
+            
+            // 1. Original Planet Position (Local) + World Shift
+            // Since the planet is at (0, -R, 0) inside the container, and the container is at -VIRTUAL...
+            const r = WORLD_CONFIG.physical.planetRadius;
+            const relativePlanetCenter = new THREE.Vector3(0, -r, 0).sub(VIRTUAL_CAMERA.position);
+
+            // 2. Update Cloud Shader
+            if (cloudMaterial) {
+                // The camera for the shader is now always at the origin
+                cloudMaterial.uniforms.uCameraPos.value.set(0, 0, 0);
+                // The planet has moved relative to the camera
+                cloudMaterial.uniforms.uPlanetCenter.value.copy(relativePlanetCenter);
+            }
+
+            // 3. Update Final Compositor (Atmospheric Sky)
+            if (finalCompositorMaterial) {
+                finalCompositorMaterial.uniforms.uCameraPos.value.set(0, 0, 0);
+                finalCompositorMaterial.uniforms.uPlanetCenter.value.copy(relativePlanetCenter);
+            }
+
+            // UNIFIED CALCULATION OF SUN POSITION ON SCREEN
+            // =====================================================================
+            // Calculate sun direction
+            const env = WORLD_CONFIG.environment;
+            const phi = THREE.MathUtils.degToRad(90 - env.sunElevation);
+            const theta = THREE.MathUtils.degToRad(env.sunAzimuth);
+            const sunDir = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
+            
+            // Project the sun's position (a very distant point in the sun's direction) onto the screen
+            const sunPosWorld = new THREE.Vector3().copy(sunDir).multiplyScalar(1e7).add(camera.position);
+            const sunScreenPos = sunPosWorld.clone().project(camera);
+
+            // Convert from Screen coordinates (-1 to +1) to UV (0 to 1)
+            const sunUV = new THREE.Vector2(sunScreenPos.x * 0.5 + 0.5, sunScreenPos.y * 0.5 + 0.5);
+            // Check if the sun is in front of the camera (Z component < 1)
+            const isSunInFront = sunScreenPos.z < 1.0;
+            // =====================================================================
+
+            // INCREMENT FRAME COUNTER (For Jitter/Noise to dance)
+            frameCounter++;
+
+            // --- CLOUD ANIMATION LOGIC ---
+            if (cloudMaterial) {
+                const animConf = WORLD_CONFIG.animation;
+
+                // 1. 3D Texture (Local Wind)
+                if (animConf.wind3D.active) {
+                    animState.accumulatedWind.x += animConf.wind3D.speedX * delta;
+                    animState.accumulatedWind.y += animConf.wind3D.speedY * delta;
+                    animState.accumulatedWind.z += animConf.wind3D.speedZ * delta;
+                    cloudMaterial.uniforms.uWindOffset.value.copy(animState.accumulatedWind);
+                }
+
+                // 2. Weather (Global Rotation of the 2D Texture)
+                if (animConf.weatherRotation.active) {
+                    // Increment
+                    animState.accumulatedWeather.x += animConf.weatherRotation.speedU * delta;
+                    animState.accumulatedWeather.y += animConf.weatherRotation.speedV * delta;
+                    
+                    cloudMaterial.uniforms.uWeatherOffset.value.copy(animState.accumulatedWeather);
+                }
+            }
+
+            // --- WORLD SYNCHRONIZATION (FLOATING ORIGIN) ---
+            // Move the entire world in the opposite direction of the virtual camera.
+            // The physical camera remains at (0,0,0), the world moves to (-x, -y, -z).          
+            worldContainer.position.set(
+                -VIRTUAL_CAMERA.position.x,
+                -VIRTUAL_CAMERA.position.y,
+                -VIRTUAL_CAMERA.position.z
+            );
+
+            // 1. Movement Logic (INPUT HIJACK)
+            if (controls.isLocked) {
+                // Capture inputs
+                const fwdInput = Number(moveFwd) - Number(moveBwd);
+                const sideInput = Number(moveRgt) - Number(moveLft);
+                const vertInput = Number(moveUp) - Number(moveDwn);
+
+                // Only process if there is any input
+                if (fwdInput !== 0 || sideInput !== 0 || vertInput !== 0) {
+                    
+                    const speed = WORLD_CONFIG.flight.speed * delta;
+                    
+                    // --- MANUAL VECTOR MATH ---
+                    // We need to replicate the PointerLockControls behavior (planar XZ movement)
+                    // but apply it to our VIRTUAL_CAMERA instead of the physical one.
+                    
+                    // 1. Find where the camera is looking (Forward)
+                    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+                    forward.y = 0; // Force planar movement (no flying down when looking at the ground)
+                    forward.normalize();
+
+                    // 2. Find the camera's right (Right)
+                    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                    right.y = 0;
+                    right.normalize();
+
+                    // 3. Final accumulated movement vector
+                    const moveVector = new THREE.Vector3();
+                    moveVector.addScaledVector(forward, fwdInput);
+                    moveVector.addScaledVector(right, sideInput);
+                    moveVector.normalize(); // Normalize to walk diagonally at the same speed
+                    
+                    // 4. Apply speed
+                    moveVector.multiplyScalar(speed);
+
+                    // 5. UPDATE THE VIRTUAL CAMERA (The magic happens here)
+                    VIRTUAL_CAMERA.position.x += moveVector.x;
+                    VIRTUAL_CAMERA.position.z += moveVector.z;
+                    VIRTUAL_CAMERA.position.y += vertInput * speed; // Direct vertical movement (Space/Shift)
+                }
+
+                // --- HUD UPDATE ---
+                // Now the HUD reads the truth (Virtual), not the illusion (Physical Camera)
+                
+                // Estimated speed (visual only)
+                const currentSpeed = (fwdInput || sideInput || vertInput) ? WORLD_CONFIG.flight.speed : 0;
+                
+                speedometerEl.innerText = `${Math.round(currentSpeed).toLocaleString('en-US')} m/s`;
+                // Read from Virtual
+                altimeterEl.innerText = `${Math.round(VIRTUAL_CAMERA.position.y).toLocaleString('en-US')} m`;
+                coordsEl.innerText = `X: ${Math.round(VIRTUAL_CAMERA.position.x).toLocaleString('en-US')}, Z: ${Math.round(VIRTUAL_CAMERA.position.z).toLocaleString('en-US')}`;
+            }
+
+            // --- TAA RENDERING PIPELINE ---
+
+            // 1. Update Matrices and Global Uniforms
+            camera.updateMatrixWorld();
+            renderer.setScissorTest(false);
+            
+            // Golden Ratio for non-repetitive Jitter
+            const goldenRatio = 0.61803398875;
+            const noiseOffsetX = (frameCounter * goldenRatio) % 1.0;
+            const noiseOffsetY = (frameCounter * goldenRatio * 0.754877666) % 1.0;
+
+            if (cloudMaterial) {
+                // Update Frame Uniforms
+                cloudMaterial.uniforms.uFrame.value = frameCounter;
+                cloudMaterial.uniforms.uBlueNoiseOffset.value.set(noiseOffsetX, noiseOffsetY);
+                
+                // Pass the matrix from the PREVIOUS frame (calculated at the end of the last loop)
+                cloudMaterial.uniforms.uPreviousViewProjectionMatrix.value.copy(previousViewProjectionMatrix);
+                
+                // Pass the read texture (HISTORY)
+                if (cloudRenderTargetRead) {
+                    cloudMaterial.uniforms.tPreviousCloud.value = cloudRenderTargetRead.texture;
+                }
+
+                // Update Inverse Camera for Raymarching
+                cloudMaterial.uniforms.uCameraPos.value.copy(camera.position);
+                cloudMaterial.uniforms.uInverseViewMatrix.value.copy(camera.matrixWorld); 
+                cloudMaterial.uniforms.uInverseProjectionMatrix.value.copy(camera.projectionMatrixInverse);
+                cloudMaterial.uniforms.uSunDirection.value.copy(sunDir);
+            }
+
+            // 2. PASS 1: SOLID SCENE (to sceneRenderTarget)
+            renderer.setRenderTarget(sceneRenderTarget);
+            renderer.clear();
+            renderer.render(scene, camera);
+
+            // 3. PASS 2: TAA CLOUDS (to cloudRenderTargetWrite)
+            if (cloudMaterial) {
+                // Connect Depth from solid scene for occlusion
+                cloudMaterial.uniforms.tDepth.value = sceneRenderTarget.depthTexture;
+                
+                // Write to the "Write" buffer (Current)
+                renderer.setRenderTarget(cloudRenderTargetWrite);
+                renderer.clear();
+                renderer.render(fsQuadScene, fsQuadCamera);
+            }
+
+            // 4. SWAP BUFFERS (PING-PONG) FOR CLOUDS
+            const tempCloud = cloudRenderTargetRead;
+            cloudRenderTargetRead = cloudRenderTargetWrite;
+            cloudRenderTargetWrite = tempCloud;
+
+            // =====================================================================
+            //  GOD RAYS MINI-PIPELINE
+            // =====================================================================
+            
+            // STEP A: RENDER OCCLUSION MASK
+            if (occlusionQuad) {
+                const occMat = occlusionQuad.material;
+                occMat.uniforms.tSceneDepth.value = sceneRenderTarget.depthTexture; 
+                
+                // --- CORRECTION HERE ---
+                // cloudRenderTargetRead is an MRT. .texture is an ARRAY.
+                // texture[0] = Color + Alpha (What we need)
+                // texture[1] = Depth
+                if (cloudRenderTargetRead && cloudRenderTargetRead.texture && cloudRenderTargetRead.texture.length > 0) {
+                     occMat.uniforms.tClouds.value = cloudRenderTargetRead.texture[0];
+                }
+                // ---------------------
+
+                occMat.uniforms.uSunPositionScreen.value.copy(sunUV);
+                occMat.uniforms.uSunInFront.value = isSunInFront;
+                
+                renderer.setRenderTarget(occlusionRenderTarget);
+                renderer.clear(); 
+                renderer.render(occlusionScene, occlusionCamera);
+            }
+            
+            // STEP B: UPDATE SUN STATE (Anti-Flicker with Ping-Pong)
+            if (sunStateQuad) {
+                const sunMat = sunStateQuad.material.uniforms;
+                sunMat.tOcclusion.value = occlusionRenderTarget.texture;
+                sunMat.tPreviousState.value = sunStateTargetRead.texture;
+                sunMat.uSunPositionScreen.value.copy(sunUV);
+                
+                renderer.setRenderTarget(sunStateTargetWrite);
+                renderer.render(sunStateScene, sunStateCamera);
+                
+                // Swap state buffers
+                const tempState = sunStateTargetRead;
+                sunStateTargetRead = sunStateTargetWrite;
+                sunStateTargetWrite = tempState;
+            }
+
+            // STEP C: RENDER GOD RAYS (Radial Blur)
+            if (godRaysQuad) {
+                const grMat = godRaysQuad.material.uniforms;
+                grMat.tOcclusion.value = occlusionRenderTarget.texture;
+                grMat.uSunPositionScreen.value.copy(sunUV);
+                
+                renderer.setRenderTarget(godRaysRenderTarget);
+                renderer.clear();
+                renderer.render(godRaysScene, godRaysCamera);
+            }
+            
+            // =====================================================================
+            
+            // 5. FINAL PASS: FULL COMPOSITION (Atmosphere + Rays + Clouds -> Screen)
+            if (finalCompositorMaterial) {
+                const u = finalCompositorMaterial.uniforms;
+                
+                // Update camera and sun (as before)
+                u.uCameraPos.value.copy(camera.position);
+                u.uInverseViewMatrix.value.copy(camera.matrixWorld);
+                u.uInverseProjectionMatrix.value.copy(camera.projectionMatrixInverse);
+                u.uSunDirection.value.copy(sunDir); // Use sunDir calculated at start of frame
+                u.uSunIntensity.value = env.sunIntensity;
+                
+                // Connect scene and cloud buffers
+                u.tScene.value = sceneRenderTarget.texture;
+                u.tDepth.value = sceneRenderTarget.depthTexture;
+                // --- [UPDATE] READING FROM MRT ---
+                // cloudRenderTargetRead.texture is now an ARRAY.
+                // texture[0] = Color, texture[1] = Depth
+                u.tClouds.value = cloudRenderTargetRead.texture[0]; 
+                u.tCloudDepth.value = cloudRenderTargetRead.texture[1];
+                // ------------------------------
+                
+                // --- CONNECT EFFECT BUFFERS ---
+                u.tGodRays.value = godRaysRenderTarget.texture;
+                u.tSunVisibility.value = sunStateTargetRead.texture; // Read buffer of the state
+                // Calculate physical sun color for the rays
+                // CORRECTION: Use VIRTUAL_CAMERA for physical color calculation
+                u.uSunPhysicalColor.value.copy(getPhysicalSunColor(sunDir, WORLD_CONFIG.physical, 1.0, VIRTUAL_CAMERA.position));
+                
+                // Update exposure and intensity
+                u.uExposure.value = env.exposure;
+                u.uGodRaysIntensity.value = WORLD_CONFIG.godRays.intensity;
+
+                // RENDER TO SCREEN
+                renderer.setRenderTarget(null);
+                renderer.clear();
+                renderer.render(finalCompositorScene, finalCompositorCamera);
+            }
+
+            // 6. PREPARE FOR NEXT FRAME
+            // --- TAA: CAPTURE HISTORY FOR NEXT FRAME ---            
+            // 1. Ensure camera's world matrix is up-to-date
+            camera.updateMatrixWorld(); 
+            camera.updateProjectionMatrix();
+
+            // 2. Calculate the combined View-Projection matrix
+            // This matrix represents exactly "how the camera saw the world in this frame".
+            // In the next frame, we'll use it to know where pixels used to be.
+            previousViewProjectionMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            // -------------------------------------------------------------------
+        }
+
+        animate();
+
+    </script>
+</body>
+</html>
