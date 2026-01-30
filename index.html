@@ -733,8 +733,8 @@
                 uniform float uLogDepthBufFC;
                 
                 // --- TEXTURES ---
-                uniform sampler2D tBlueNoise;   
-                uniform vec2 uBlueNoiseOffset;             
+                uniform sampler2D t;   
+                uniform vec2 uOffset;             
                 uniform sampler3D uTexture;       
                 uniform sampler3D uDetailTexture; 
                 uniform sampler2D tWeatherMap;
@@ -1033,8 +1033,8 @@
 
                     // Blue Noise (Dithering to reduce banding)
                     vec2 noiseUV = gl_FragCoord.xy / 256.0;
-                    float noiseSliding = texture(tBlueNoise, noiseUV + uBlueNoiseOffset).r;
-                    float noiseStatic = texture(tBlueNoise, noiseUV).r;
+                    float noiseSliding = texture(t, noiseUV + uOffset).r;
+                    float noiseStatic = texture(t, noiseUV).r;
 
                     float t = tNear;
                     float currentStep = uInitialStep; 
@@ -1680,7 +1680,7 @@
 
         // --- 4.3 Terrain (External Assets) ---
         const gltfLoader = new GLTFLoader();
-        gltfLoader.load("https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/assets/scenario_sample350km.glb", (gltf) => {
+        gltfLoader.load("./assets/scenario_sample350km.glb", (gltf) => {
             const terrain = gltf.scene;
             terrain.position.set(0, 0, 0); 
             worldContainer.add(terrain);
@@ -1714,7 +1714,7 @@
 
         // Blue Noise Loading
         const textureLoader = new THREE.TextureLoader();
-        const blueNoiseTexture = textureLoader.load('https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/assets/bluenoise.png');
+        const blueNoiseTexture = textureLoader.load('./assets/bluenoise.png');
         blueNoiseTexture.wrapS = THREE.RepeatWrapping; 
         blueNoiseTexture.wrapT = THREE.RepeatWrapping;
         blueNoiseTexture.minFilter = THREE.NearestFilter; 
