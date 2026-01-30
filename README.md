@@ -1,4 +1,4 @@
-# Universal Planetary Volumetric Atmosphere & Cloud Engine
+# Universal Planetary Volumetric Atmosphere & Cloud Engine - HTML, Three.js
 
 ![Three.js](https://img.shields.io/badge/Three.js-r165-black?logo=three.js)
 ![GLSL](https://img.shields.io/badge/GLSL-3.0-green.svg)
