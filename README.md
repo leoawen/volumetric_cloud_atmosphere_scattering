@@ -10,12 +10,15 @@
 
 https://github.com/user-attachments/assets/1f8ddefb-3be5-4302-a625-95dc495c05ae
 
+---
+### 🔴🌎⛅🎮 [Live Demo Here](https://leoawen.github.io/volumetric_cloud_atmosphere/) 🔴
+---
 
 A fully real-time, physically-based planetary atmosphere and volumetric cloud rendering engine built from the ground up using **Three.js** and **GLSL**. This project serves as an educational tool and a demonstration of advanced real-time graphics techniques in a web browser.
 
 It simulates light scattering through a planetary atmosphere (Rayleigh and Mie scattering) and renders dynamic, three-dimensional clouds using raymarching. All parameters are exposed through a control panel, allowing for deep customization of the final look.
 
-### 🔴 [Live Demo Here](https://leoawen.github.io/volumetric_cloud_atmosphere/) 🔴
+
 
 ## ✨ Key Features
 
