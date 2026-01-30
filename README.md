@@ -7,8 +7,6 @@
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2013.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2013.png)
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%204.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%204.png)
 
-
-
 A fully real-time, physically-based planetary atmosphere and volumetric cloud rendering engine built from the ground up using **Three.js** and **GLSL**. This project serves as an educational tool and a demonstration of advanced real-time graphics techniques in a web browser.
 
 It simulates light scattering through a planetary atmosphere (Rayleigh and Mie scattering) and renders dynamic, three-dimensional clouds using raymarching. All parameters are exposed through a control panel, allowing for deep customization of the final look.
@@ -60,6 +58,10 @@ The final image is assembled:
 -   The volumetric clouds from Pass 3 are blended on top.
 -   Post-effects like God Rays are added.
 -   Finally, exposure control and tone mapping are applied to produce the final color.
+
+![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%205.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%205.png)
+![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%202.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%202.png)
+![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%206.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%206.png)
 
 ## 💻 Running Locally
 
