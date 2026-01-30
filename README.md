@@ -1,4 +1,4 @@
-# Universal Planetary Volumetric Atmosphere & Cloud Engine - HTML, Three.js
+# Universal Planetary Volumetric Clouds & Scattering Atmosphere Engine - HTML, Three.js
 
 ![Three.js](https://img.shields.io/badge/Three.js-r165-black?logo=three.js)
 ![GLSL](https://img.shields.io/badge/GLSL-3.0-green.svg)
@@ -94,6 +94,9 @@ Since this project loads texture files, you cannot run it by simply opening the 
 
 This project was developed by **[leoawen](https://github.com/leoawen)** with the assistance of Google's AI for code structuring, documentation, and translation.
 
+Reference
+https://www.shadertoy.com/view/lcfSRl
+
 ## 📜 License
 
 This project is open-source and available under the **MIT License**. See the [LICENSE](https://opensource.org/licenses/MIT) file for more info.# volumetric_cloud_atmosphere
@@ -106,3 +109,5 @@ Vibecoded Universal Planetary Volumetric Cloud &amp; Atmosphere Engine whith HTM
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2010.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2010.png)
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2013.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%2013.png)
 ![https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%201.png](https://github.com/leoawen/volumetric_cloud_atmosphere/blob/main/screenshots/Universal%20Planetary%20Volumetric%20Cloud%20%26%20Atmosphere%20Engine%20v_01%20-%20Screenshot%201.png)
+
+
